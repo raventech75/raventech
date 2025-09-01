@@ -1,36 +1,27 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
-// app/api/auth/set-cookie/route.ts
-import { NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
+type Body = { access_token: string; refresh_token: string };
 
 export async function POST(req: Request) {
-  const { access_token, refresh_token } = await req.json();
+  const jar = await cookies(); // Next 15
+  const { access_token, refresh_token } = (await req.json()) as Body;
 
-  const res = NextResponse.json({ ok: true });
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return undefined;
-        },
-        set(name: string, value: string, options: any) {
-          res.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          res.cookies.set({ name, value: '', ...options });
-        },
-      },
-    }
-  );
+  if (!access_token || !refresh_token) {
+    return NextResponse.json({ error: "Missing tokens" }, { status: 400 });
+  }
 
-  // Pose les cookies via setSession (v2)
-  await supabase.auth.setSession({
-    access_token,
-    refresh_token,
+  // Cookies attendus par @supabase/ssr
+  jar.set("sb-access-token", access_token, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+  });
+  jar.set("sb-refresh-token", refresh_token, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
   });
 
-  return res;
+  return NextResponse.json({ ok: true });
 }

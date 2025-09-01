@@ -57,18 +57,35 @@ function SignInForm() {
 
     setLoading(true);
     try {
-      const { error: err } = await supabaseBrowser.auth.signInWithPassword({ email, password });
-      if (err) throw err;
+  // 1) login
+  const { error: err } = await supabaseBrowser.auth.signInWithPassword({ email, password });
+  if (err) throw err;
 
-      const redirect = params.get('redirect') || '/dashboard';
-      await new Promise((r) => setTimeout(r, 300));
-      router.replace(redirect);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg || 'Une erreur est survenue. Réessayez.');
-    } finally {
-      setLoading(false);
-    }
+  // 2) récupérer la session
+  const sess = await supabaseBrowser.auth.getSession();
+  const at = sess.data.session?.access_token;
+  const rt = sess.data.session?.refresh_token;
+
+  // 3) synchroniser les cookies httpOnly côté serveur (pour middleware/SSR)
+  if (at && rt) {
+    await fetch('/api/auth/set-cookie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ access_token: at, refresh_token: rt }),
+    });
+  }
+
+  // 4) redirection
+  const redirect = params.get('redirect') || '/dashboard';
+  await new Promise((r) => setTimeout(r, 200));
+  router.replace(redirect);
+} catch (err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err);
+  setError(msg || 'Une erreur est survenue. Réessayez.');
+} finally {
+  setLoading(false);
+}
   }
 
   return (
