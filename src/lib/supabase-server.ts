@@ -1,25 +1,48 @@
+// src/lib/supabase-server.ts
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
+/**
+ * Crée un client Supabase côté serveur en lisant manuellement
+ * les cookies 'sb-access-token' & 'sb-refresh-token' et en
+ * poussant le JWT dans Authorization: Bearer <token>.
+ */
 export async function supabaseServer() {
-  const store = await cookies(); // Next 15
+  const jar = await cookies();
+
+  // Lis les cookies (HttpOnly)
+  const access = jar.get("sb-access-token")?.value;
+  const refresh = jar.get("sb-refresh-token")?.value;
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Fournit un adapter cookies à @supabase/ssr (pour refresh éventuel)
       cookies: {
         get(name: string) {
-          // lit sb-access-token / sb-refresh-token
-          return store.get(name)?.value;
+          return jar.get(name)?.value;
         },
         set(name: string, value: string, options: CookieOptions) {
-          // permet à @supabase/ssr de rafraîchir la session si besoin
-          store.set(name, value, options);
+          jar.set(name, value, options);
         },
         remove(name: string, options: CookieOptions) {
-          store.set(name, "", { ...options, maxAge: 0 });
+          jar.set(name, "", { ...options, maxAge: 0 });
         },
+      },
+      // Injecte Authorization si on a le JWT
+      global: access
+        ? {
+            headers: {
+              Authorization: `Bearer ${access}`,
+            },
+          }
+        : undefined,
+      auth: {
+        persistSession: false,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+        flowType: "pkce",
       },
     }
   );
