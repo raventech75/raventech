@@ -11,6 +11,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.56.1",
+    "@vercel/analytics": "^1.5.0",
     "framer-motion": "^12.23.12",
     "konva": "^9.3.22",
     "lucide-react": "^0.542.0",
