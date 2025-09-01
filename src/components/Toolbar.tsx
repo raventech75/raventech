@@ -122,7 +122,12 @@ export default function Toolbar({ onFit }: Props) {
         >
           Aperçu
         </button>
+        // Ouvrir l’aperçu de la page en cours
+        (window as any).ravenOpenPreviewCurrent?.();
 
+        // Ouvrir l’aperçu de TOUTES les pages (navigation ← → + miniatures)
+        (window as any).ravenOpenPreviewAll?.();
+        
         <div className="h-5 w-px bg-slate-300" />
 
         <label className="inline-flex items-center gap-2">
