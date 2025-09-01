@@ -30,16 +30,17 @@ export type PhotoItem = {
   kind: 'photo';
   id: string;
   assetId: string;
-  ar: number;
+  ar: number; // ratio (w/h)
   x: number; y: number;
   width: number; height: number;
   rotation: number;
   scaleX: number; scaleY: number;
   opacity: number;
+
+  // styles optionnels
   borderW?: number;
   borderColor?: string;
   cornerR?: number;
-  // ⬇️ AJOUTS (fondus en pixels)
   fadeTop?: number;
   fadeBottom?: number;
   fadeLeft?: number;
@@ -80,16 +81,7 @@ const safeAR = (w?:number, h?:number) => {
 const rectsOverlap = (a:{x:number;y:number;w:number;h:number}, b:{x:number;y:number;w:number;h:number}) =>
   !(a.x+a.w <= b.x || b.x+b.w <= a.x || a.y+a.h <= b.y || b.y+b.h <= a.y);
 
-function pLimit<T>(concurrency:number){
-  let active = 0;
-  const queue:(()=>void)[]=[];
-  const next=()=>{ active--; queue.shift()?.(); };
-  return async (fn:()=>Promise<T>)=>{
-    if (active>=concurrency) await new Promise<void>(res=>queue.push(res));
-    active++;
-    try { return await fn(); } finally { next(); }
-  };
-}
+export type ImportProgress = { running: boolean; total: number; done: number };
 
 export type AlbumState = {
   size: AlbumSizeCm;
@@ -118,19 +110,18 @@ export type AlbumState = {
   currentIndex: number;
 
   assets: PhotoAsset[];
-  selectedIds: string[];
+  importProgress: ImportProgress;
 
+  selectedIds: string[];
   tool: 'select'|'photo'|'text';
   setTool: (t: AlbumState['tool']) => void;
 
   setSize: (s: AlbumSizeCm) => void;
   setZoom: (z: number) => void;
-
   toggleGrid: () => void;
   setGridSize: (n: number) => void;
   toggleGuides: () => void;
   toggleSnap: () => void;
-
   setBleedMm: (n: number) => void;
   setSafeMm: (n: number) => void;
   setBackground: (bg: Background) => void;
@@ -146,6 +137,9 @@ export type AlbumState = {
   placePhoto: (assetId: string, x?: number | null, y?: number | null, targetW?: number | null) => void;
   placePhotoAuto: (assetId: string, baseTargetW?: number) => void;
 
+  /** ⬇️ nouveau : place toutes les photos non utilisées, 10/photos par page max (crée des pages) */
+  placeManyAutoPages: (maxPerPage?: number) => Promise<void>;
+
   addText: (x:number,y:number,text?:string)=>void;
   updateItem: (pageId:string,itemId:string,patch: Partial<PhotoItem|TextItem>)=>void;
   deleteItem: (pageId:string,itemId:string)=>void;
@@ -154,9 +148,6 @@ export type AlbumState = {
   selectOnly: (id:string|null)=>void;
   toggleSelect: (id:string)=>void;
   selectNone: ()=>void;
-
-  bringToFront: ()=>void;
-  sendToBack: ()=>void;
 
   autoLayout: (columns: 1|2|3|4)=>void;
   autoLayoutAuto: ()=>void;
@@ -196,6 +187,8 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
   currentIndex: 0,
 
   assets: [],
+  importProgress: { running:false, total:0, done:0 },
+
   selectedIds: [],
   tool: 'select',
   setTool: (t)=> set({ tool:t }),
@@ -221,7 +214,7 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
   }),
   addPage: ()=> set(s=>{
     if (s.pages.length>=25) return s;
-    return { pages: [...s.pages,{id:nanoid(),items:[]}], pageCount: s.pageCount+1, currentIndex: s.pages.length };
+    return { pages: [...s.pages,{id:nanoid(),items:[]}], pageCount: Math.max(s.pageCount, s.pages.length+1), currentIndex: s.pages.length };
   }),
   removePage: (idx)=> set(s=>{
     if (s.pages.length<=1) return s;
@@ -234,38 +227,41 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     return { assets, pages, pageCount: Math.max(2, s.pageCount-1), currentIndex: Math.min(s.currentIndex, pages.length-1), selectedIds: [] };
   }),
 
-  // ⚡️ Import ultra fluide (createImageBitmap + concurrence 6)
   addAssets: async (files) => {
     const list = Array.from(files);
-    const limitLeft = Math.max(0, 150 - get().assets.length);
-    const slice = list.slice(0, limitLeft);
+    const limit = Math.max(0, 150 - get().assets.length);
+    const slice = list.slice(0, limit);
 
-    const limit = pLimit(6);
-    const tasks = slice.map((f) =>
-      limit(async () => {
+    set({ importProgress: { running:true, total: slice.length, done: 0 } });
+
+    const decodeOne = async (f: File) => {
+      try {
+        const bmp = await createImageBitmap(f);
         const url = URL.createObjectURL(f);
-        try {
-          const bmp = await createImageBitmap(f);
-          const w = safeDim(bmp.width, 1000);
-          const h = safeDim(bmp.height, 667);
-          // @ts-ignore
-          bmp.close?.();
-          return { id: nanoid(), name: f.name, url, w, h, used:false } as PhotoAsset;
-        } catch {
-          // fallback Image() si createImageBitmap échoue
-          const dim = await new Promise<{w:number;h:number}>(res=>{
-            const im = new Image(); im.onload = ()=> res({ w: im.naturalWidth||1000, h: im.naturalHeight||667 }); im.src = url;
-          });
-          return { id: nanoid(), name: f.name, url, w: safeDim(dim.w,1000), h: safeDim(dim.h,667), used:false } as PhotoAsset;
-        }
-      })
-    );
+        // @ts-ignore
+        bmp.close?.();
+        const w = safeDim(bmp.width, 1000);
+        const h = safeDim(bmp.height, 667);
+        return { id: nanoid(), name: f.name, url, w, h, used:false };
+      } catch {
+        const url = URL.createObjectURL(f);
+        const dim = await new Promise<{w:number;h:number}>(res=>{
+          const im = new Image(); im.onload = ()=> res({ w: im.naturalWidth||1000, h: im.naturalHeight||667 }); im.src = url;
+        });
+        return { id: nanoid(), name: f.name, url, w: safeDim(dim.w,1000), h: safeDim(dim.h,667), used:false };
+      }
+    };
 
-    const results = await Promise.allSettled(tasks);
-    const ok = results
-      .filter((r): r is PromiseFulfilledResult<PhotoAsset> => r.status === 'fulfilled')
-      .map((r) => r.value);
-    set((s)=>({ assets: [...s.assets, ...ok] }));
+    const batch: PhotoAsset[] = [];
+    let done = 0;
+    for (const f of slice) {
+      await new Promise<void>(r => setTimeout(r, 0));
+      batch.push(await decodeOne(f));
+      done++;
+      set(s => ({ importProgress: { ...s.importProgress, done } }));
+    }
+
+    set(s=>({ assets: [...s.assets, ...batch], importProgress: { running:false, total: batch.length, done: batch.length } }));
   },
 
   removeAsset: (id)=> set(s=>{
@@ -283,9 +279,8 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     const bleed = get().mmToPx(s.bleedMm);
     const area = { x: bleed, y: bleed, w: W-2*bleed, h: H-2*bleed };
 
-
     const ar = safeAR(asset.w, asset.h);
-    let w = safeDim(baseTargetW ?? area.w*0.38, 40);
+    let w = safeDim(baseTargetW ?? area.w*0.42, 40);
     if (w > area.w) w = area.w;
     let h = Math.round(w / ar);
     if (h > area.h) { h = area.h; w = Math.round(h * ar); }
@@ -293,7 +288,7 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     const page = s.pages[s.currentIndex];
     const others = page.items.filter((i:any)=>i.kind==='photo') as PhotoItem[];
 
-    const step = 16;
+    const step = 12;
     let placedX = area.x, placedY = area.y, okFound = false;
 
     outer:
@@ -310,7 +305,7 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     }
 
     if (!okFound) {
-      for (let scale = 0.9; scale >= 0.5; scale -= 0.1) {
+      for (let scale = 0.9; scale >= 0.5; scale -= 0.08) {
         const tw = Math.round(w*scale), th = Math.round(h*scale);
         outer2:
         for (let y = area.y; y <= area.y + area.h - th; y += step) {
@@ -328,9 +323,13 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
       }
     }
 
-    // Clamp final dans l’aire (évite “hors page”)
-    placedX = clamp(placedX, area.x, area.x + area.w - w);
-    placedY = clamp(placedY, area.y, area.y + area.h - h);
+    if (!okFound) {
+      w = Math.round(area.w * 0.45);
+      h = Math.round(w / ar);
+      if (h > area.h) { h = Math.round(area.h * 0.8); w = Math.round(h * ar); }
+      placedX = Math.round(area.x + (area.w - w)/2);
+      placedY = Math.round(area.y + (area.h - h)/2);
+    }
 
     const item: PhotoItem = {
       kind: 'photo',
@@ -344,9 +343,6 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
       rotation: 0,
       scaleX: 1, scaleY: 1,
       opacity: 1,
-      borderW: 0,
-      borderColor: '#111827',
-      cornerR: 0,
     };
 
     const pages = s.pages.slice();
@@ -365,17 +361,43 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
       const height = Math.round(Math.max(40, width/ar));
       const page = s.pages[s.currentIndex];
       const item: PhotoItem = {
-        fadeTop: 0, fadeBottom: 0, fadeLeft: 0, fadeRight: 0,
         kind: 'photo', id:nanoid(), assetId, ar,
         x: Math.round(safeNum(x, 0)), y: Math.round(safeNum(y, 0)),
-        width, height, rotation:0, scaleX:1, scaleY:1, opacity:1,
-        borderW:0, borderColor:'#111827', cornerR:0
+        width, height, rotation:0, scaleX:1, scaleY:1, opacity:1
       };
       const pages = s.pages.slice();
       pages[s.currentIndex] = { ...page, items: [...page.items, item] };
       const assets = s.assets.map(a=> a.id===assetId ? {...a, used:true}: a);
       return { pages, assets, selectedIds:[item.id] };
     });
+  },
+
+  /** ⬇️ nouveau : flux qui place toutes les photos non utilisées, en créant des pages si > maxPerPage */
+  placeManyAutoPages: async (maxPerPage = 10) => {
+    const assets = get().assets.filter(a => !a.used);
+    if (assets.length === 0) return;
+
+    for (const a of assets) {
+      const snapshot = get();
+      const currentPage = snapshot.pages[snapshot.currentIndex];
+      const photosOnPage = currentPage.items.filter((i:any)=> i.kind==='photo').length;
+
+      if (photosOnPage >= maxPerPage) {
+        // crée une page si possible
+        if (snapshot.pages.length >= 25) break; // limite globale
+        set(s=>{
+          const pages = [...s.pages, { id: nanoid(), items: [] }];
+          return { pages, pageCount: Math.max(s.pageCount, pages.length), currentIndex: pages.length-1, selectedIds: [] };
+        });
+      }
+
+      // place la photo sur la page courante
+      get().placePhotoAuto(a.id);
+
+      // petit yield pour fluidité
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(r => setTimeout(r, 12));
+    }
   },
 
   addText: (x, y, text = 'Votre titre') =>
@@ -431,9 +453,6 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
               scaleX: 1,
               scaleY: 1,
               opacity: safeNum(p.opacity ?? it.opacity, it.opacity),
-              borderW: p.borderW ?? it.borderW ?? 0,
-              borderColor: p.borderColor ?? it.borderColor ?? '#111827',
-              cornerR: p.cornerR ?? it.cornerR ?? 0,
             } as PhotoItem;
           }
           return { ...it, ...patch };
@@ -470,24 +489,6 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
   toggleSelect: (id)=> set(s=> s.selectedIds.includes(id) ? ({ selectedIds: s.selectedIds.filter(x=>x!==id) }) : ({ selectedIds:[...s.selectedIds,id] })),
   selectNone: ()=> set({ selectedIds: [] }),
 
-  bringToFront: ()=> set(s=>{
-    const sel = s.selectedIds[0]; if(!sel) return s;
-    const pg = s.pages[s.currentIndex];
-    const idx = pg.items.findIndex(i=>i.id===sel); if (idx<0) return s;
-    const items = pg.items.slice(); const [it] = items.splice(idx,1); items.push(it);
-    const pages = s.pages.slice(); pages[s.currentIndex] = { ...pg, items };
-    return { pages };
-  }),
-  sendToBack: ()=> set(s=>{
-    const sel = s.selectedIds[0]; if(!sel) return s;
-    const pg = s.pages[s.currentIndex];
-    const idx = pg.items.findIndex(i=>i.id===sel); if (idx<0) return s;
-    const items = pg.items.slice(); const [it] = items.splice(idx,1); items.unshift(it);
-    const pages = s.pages.slice(); pages[s.currentIndex] = { ...pg, items };
-    return { pages };
-  }),
-
-  // Layouts
   autoLayout: (columns)=> set(s=>{
     const pg = s.pages[s.currentIndex];
     const photos = pg.items.filter((i:any)=>i.kind==='photo') as PhotoItem[];
@@ -549,9 +550,8 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
   autoFill: (columns)=> set(s=>{
     const pg=s.pages[s.currentIndex];
     const usedHere = new Set(pg.items.filter((i:any)=>i.kind==='photo').map((i:any)=>i.assetId));
-    const candidates = s.assets.filter(a=>!a.used && !usedHere.has(a.id)).slice(0,columns*2);
-    candidates.forEach(asset=> get().placePhotoAuto(asset.id, (get().cmToPx(s.size.w*2) - 2*get().mmToPx(s.bleedMm)) / columns ));
-    get().autoLayout(columns);
+    const candidates = s.assets.filter(a=>!a.used && !usedHere.has(a.id)).slice(0,columns);
+    candidates.forEach(asset=> get().placePhotoAuto(asset.id, (get().cmToPx(s.size.w*2) - 2*get().mmToPx(s.bleedMm)) / 3 ));
     return get() as any;
   }),
 
@@ -577,4 +577,3 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     set({ project:{id:proj.id,name:proj.name}, size:proj.size, pageCount:proj.page_count, background:proj.background, bleedMm:proj.bleed_mm, safeMm:proj.safe_mm, pages, currentIndex:0, selectedIds:[] });
   },
 }));
-

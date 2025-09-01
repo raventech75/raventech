@@ -1,54 +1,37 @@
-// next.config.ts
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
-  // Si tu utilises les images distantes (Supabase storage, CDN, etc.)
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: '**' },
-      // Ajoute ci-dessous les domaines précis si tu veux resserrer la sécurité :
-      // { protocol: 'https', hostname: '*.supabase.co' },
-      // { protocol: 'https', hostname: 'your-cdn.example.com' },
-    ],
-    // Mets à true si tu ne veux aucune optimisation Next sur les <Image />
-    // unoptimized: true,
-  },
+  // Important pour éviter que Turbopack tente de bundler le mauvais build
+  transpilePackages: ['konva', 'react-konva'],
 
-  // Laisse les checks actifs (mets à true si tu veux build même avec erreurs)
-  typescript: { ignoreBuildErrors: false },
-  eslint: { ignoreDuringBuilds: false },
-
-  // Patch Konva: empêche l’import du module "canvas" (Node) côté client
-  webpack: (config) => {
-    config.resolve = config.resolve || {};
+  webpack: (config, { isServer }) => {
+    // 1) Empêche toute tentative de charger le module 'canvas'
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
-      // Important: empêche Konva de charger la version node
       canvas: false,
-      // Ces alias aident Konva à cibler ses builds browser
-      'konva/lib/Canvas': 'konva/lib/Canvas.js',
-      'konva/lib/Context': 'konva/lib/Context.js',
-      'konva/lib/Util': 'konva/lib/Util.js',
+
+      // 2) Force Konva à utiliser son entrée navigateur (et pas index-node)
+      'konva/lib/index-node': 'konva/lib/index',
+      'konva/lib/index-node.js': 'konva/lib/index.js',
     };
+
     return config;
   },
 
-  // Si tu as plusieurs lockfiles à la racine du workspace et que Turbopack
-  // se trompe de racine, dé-commente et adapte ce root :
-  // turbopack: {
-  //   root: __dirname, // ou le chemin exact de ton app Next
-  // },
+  // (Optionnel) Si tu sers des images externes
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: '**' },
+      { protocol: 'http', hostname: '**' },
+    ],
+  },
 
-  // Exemple de redirections (laisse commenté si tu n’en as pas besoin)
+  // Si tu avais des redirects/rewrite invalides, commente-les le temps du build
   // async redirects() {
   //   return [
-  //     {
-  //       source: '/old-path',
-  //       destination: '/new-path',
-  //       permanent: true,
-  //     },
+  //     // Ex. incorrect : "https://domain" → il faut des chemins relatifs uniquement ici
   //   ];
   // },
 };
