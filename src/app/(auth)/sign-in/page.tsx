@@ -84,7 +84,7 @@ const rt = sess.data.session?.refresh_token;
 }
 
   // 4) redirection
-  const redirect = params.get('redirect') || "/editor";
+  const redirect = params.get('redirect') || '/editor';
 router.replace(redirect);
 } catch (err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
