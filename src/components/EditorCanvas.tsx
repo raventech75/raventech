@@ -13,19 +13,48 @@ function nd(n:any, min=1){ const v=Number(n); if(!Number.isFinite(v)||v<=0) retu
 function magnetize(x:number,y:number,w:number,h:number,snapsX:number[],snapsY:number[],tol:number){
   const L=x,R=x+w,T=y,B=y+h,CX=x+w/2,CY=y+h/2;
   let nx=x,ny=y,snapX: number|undefined,snapY: number|undefined;
-  const cx=[{v:L,m:'L' as const},{v:R,m:'R' as const},{v:CX,m:'C' as const}];
+
+  // X
+  const cx:[{v:number;m:'L'|'R'|'C'}, {v:number;m:'L'|'R'|'C'}, {v:number;m:'L'|'R'|'C'}] = [
+    {v:L,m:'L'},{v:R,m:'R'},{v:CX,m:'C'}
+  ];
   let dX=Infinity,bSX:number|undefined,bMX:'L'|'R'|'C'|undefined;
-  for(const s of snapsX) for(const c of cx){ const d=Math.abs(c.v-s); if(d<=tol && d<dX){dX=d;bSX=s;bMX=c.m;}}
-  if(bSX!==undefined && bMX){ if(bMX==='L') nx+=bSX-L; else if(bMX==='R') nx+=bSX-R; else nx+=bSX-CX; snapX=bSX; }
-  const cy=[{v:T,m:'T' as const},{v:B,m:'B' as const},{v:CY,m:'C' as const}];
+  for(const s of snapsX){
+    for(const c of cx){
+      const d=Math.abs(c.v-s);
+      if(d<=tol && d<dX){ dX=d; bSX=s; bMX=c.m; }
+    }
+  }
+  if(bSX!==undefined && bMX){
+    if(bMX==='L') nx+=bSX-L; else if(bMX==='R') nx+=bSX-R; else nx+=bSX-CX;
+    snapX=bSX;
+  }
+
+  // Y
+  const cy:[{v:number;m:'T'|'B'|'C'}, {v:number;m:'T'|'B'|'C'}, {v:number;m:'T'|'B'|'C'}] = [
+    {v:T,m:'T'},{v:B,m:'B'},{v:CY,m:'C'}
+  ];
   let dY=Infinity,bSY:number|undefined,bMY:'T'|'B'|'C'|undefined;
-  for(const s of snapsY) for(const c of cy){ const d=Math.abs(c.v-s); if(d<=tol && d<dY){dY=d;bSY=s;bMY=c.m;}}
-  if(bSY!==undefined && bMY){ if(bMY==='T') ny+=bSY-T; else if(bMY==='B') ny+=bSY-B; else ny+=bSY-CY; snapY=bSY; }
+  for(const s of snapsY){
+    for(const c of cy){
+      const d=Math.abs(c.v-s);
+      if(d<=tol && d<dY){ dY=d; bSY=s; bMY=c.m; }
+    }
+  }
+  if(bSY!==undefined && bMY){
+    if(bMY==='T') ny+=bSY-T; else if(bMY==='B') ny+=bSY-B; else ny+=bSY-CY;
+    snapY=bSY;
+  }
+
   return { x:nx, y:ny, snapX, snapY };
 }
 
-function PhotoNode({ pageId, item, onSnapLines }:{
-  pageId:string; item:any; onSnapLines:(v:{x?:number;y?:number}|null)=>void;
+function PhotoNode({
+  pageId, item, onSnapLines
+}:{
+  pageId:string;
+  item:any;
+  onSnapLines:(v:{x?:number;y?:number}|null)=>void;
 }){
   const asset = useAlbumStore(s=> s.assets.find(a=>a.id===item.assetId));
   const [img, status] = useImage(asset?.url || '');
@@ -35,23 +64,38 @@ function PhotoNode({ pageId, item, onSnapLines }:{
   const { updateItem, selectOnly, toggleSelect, selectedIds, snap, gridSize } = st;
   const isSelected = selectedIds.includes(item.id);
 
+  // valeurs sûres + homothétie (si height manquant on dérive du ratio)
+  const ar = item.ar || (asset && asset.w && asset.h ? asset.w/asset.h : 1.5);
   const x = nn(item.x, 0);
   const y = nn(item.y, 0);
   const w = nd(item.width, 100);
-  const h = nd(item.height, Math.round(w/(item.ar || 1.5)));
+  const h = nd(item.height, Math.round(w / ar));
 
-  useEffect(()=>{ console.log('[RT][PhotoNode]', { id:item.id, ar:item.ar, status, x,y,w,h }); },[status]);
+  useEffect(()=>{
+    if (isSelected && trRef.current && nodeRef.current) {
+      trRef.current.nodes([nodeRef.current]);
+      trRef.current.getLayer()?.batchDraw();
+    }
+  },[isSelected]);
 
   const onDragMove = (e:any) => {
     if (!st.magnet) return;
     const node = e.target;
     const curX = node.x(), curY = node.y();
 
+    // autres items pour aimant
     const pg = st.pages[st.currentIndex];
     const others = pg.items.filter((it:any)=> it.kind==='photo' && it.id!==item.id) as any[];
     const snapsX:number[] = [], snapsY:number[] = [];
-    for (const o of others){ snapsX.push(nn(o.x,0), nn(o.x,0)+nd(o.width,1), nn(o.x,0)+nd(o.width,1)/2); snapsY.push(nn(o.y,0), nn(o.y,0)+nd(o.height,1), nn(o.y,0)+nd(o.height,1)/2); }
 
+    for (const o of others){
+      const ox = nn(o.x,0), oy = nn(o.y,0);
+      const ow = nd(o.width,1), oh = nd(o.height,1);
+      snapsX.push(ox, ox+ow, ox+ow/2);
+      snapsY.push(oy, oy+oh, oy+oh/2);
+    }
+
+    // bords page + pli + bleed
     const W = st.cmToPx(st.size.w*2), H = st.cmToPx(st.size.h);
     const bleed = st.mmToPx(st.bleedMm);
     snapsX.push(bleed, W/2, W-bleed);
@@ -59,7 +103,8 @@ function PhotoNode({ pageId, item, onSnapLines }:{
 
     const res = magnetize(curX, curY, w, h, snapsX, snapsY, st.magnetTol);
     if (res.x !== curX || res.y !== curY) node.position({ x: res.x, y: res.y });
-    if (res.snapX !== undefined || res.snapY !== undefined) onSnapLines({ x: res.snapX, y: res.snapY }); else onSnapLines(null);
+    if (res.snapX !== undefined || res.snapY !== undefined) onSnapLines({ x: res.snapX, y: res.snapY });
+    else onSnapLines(null);
   };
 
   const onDragEnd = (e:any) => {
@@ -69,22 +114,20 @@ function PhotoNode({ pageId, item, onSnapLines }:{
     onSnapLines(null);
   };
 
-  // 🔒 homothétie forcée ici aussi
+  // 🔒 homothétie forcée en fin de transform
   const onTransformEnd = () => {
     const node = nodeRef.current; if (!node) return;
     const newW = Math.max(20, node.width() * node.scaleX());
-    const ar = item.ar || 1.5;
     const newH = Math.max(20, Math.round(newW / ar));
     node.scaleX(1); node.scaleY(1);
-    updateItem(pageId, item.id, { width: Math.round(newW), height: newH, rotation: node.rotation() });
+    updateItem(pageId, item.id, {
+      width: Math.round(newW),
+      height: newH,
+      rotation: node.rotation(),
+      x: node.x(),
+      y: node.y()
+    });
   };
-
-  useEffect(()=>{
-    if (isSelected && trRef.current && nodeRef.current) {
-      trRef.current.nodes([nodeRef.current]);
-      trRef.current.getLayer()?.batchDraw();
-    }
-  },[isSelected]);
 
   const showPlaceholder = !img;
 
@@ -121,7 +164,7 @@ function PhotoNode({ pageId, item, onSnapLines }:{
         <Transformer
           ref={trRef}
           rotateEnabled
-          keepRatio // ⬅️ UI (coins) conserve le ratio
+          keepRatio // ⬅️ UI (coins) conserve le ratio visuellement
           enabledAnchors={['top-left','top-right','bottom-left','bottom-right']}
           anchorSize={8}
           borderStroke="#000"
@@ -156,29 +199,29 @@ function TextNode({ pageId, item }: { pageId: string; item: any }) {
 
   return (
     <>
-    <KText
-  ref={nodeRef}
-  x={x}
-  y={y}
-  width={w}
-  text={item.text ?? ''}
-  fontSize={nn(item.fontSize, 32)}
-  fontFamily={item.fontFamily ?? 'Inter, system-ui, sans-serif'}
-  align={item.align ?? 'left'}
-  fill={item.color ?? '#000'}
-  rotation={nn(item.rotation,0)}
-  /* ⬇️ Nouveautés */
-  fontStyle={(item.fontWeight ?? 400) >= 600 ? 'bold' : 'normal'}
-  letterSpacing={item.letterSpacing ?? 0}
-  lineHeight={item.lineHeight ?? 1.2}
-  draggable
-  onClick={(e)=>{ if (e.evt.shiftKey) toggleSelect(item.id); else selectOnly(item.id); }}
-  onDblClick={()=> {
-    const t = prompt('Texte :', item.text ?? '');
-    if (t !== null) updateItem(pageId, item.id, { text: t });
-  }}
-  onDragEnd={onDragEnd}
-/>
+      <KText
+        ref={nodeRef}
+        x={x}
+        y={y}
+        width={w}
+        text={item.text ?? ''}
+        fontSize={nn(item.fontSize, 32)}
+        fontFamily={item.fontFamily ?? 'Inter, system-ui, sans-serif'}
+        align={item.align ?? 'left'}
+        fill={item.color ?? '#000'}
+        rotation={nn(item.rotation,0)}
+        /* ⬇️ Nouveautés */
+        fontStyle={(item.fontWeight ?? 400) >= 600 ? 'bold' : 'normal'}
+        letterSpacing={item.letterSpacing ?? 0}
+        lineHeight={item.lineHeight ?? 1.2}
+        draggable
+        onClick={(e)=>{ if (e.evt.shiftKey) toggleSelect(item.id); else selectOnly(item.id); }}
+        onDblClick={()=> {
+          const t = prompt('Texte :', item.text ?? '');
+          if (t !== null) updateItem(pageId, item.id, { text: t });
+        }}
+        onDragEnd={onDragEnd}
+      />
       {isSelected && nodeRef.current && (
         <Transformer
           ref={trRef}
@@ -231,14 +274,25 @@ export default function EditorCanvas() {
     return els;
   },[showGrid,gridSize,pageW,pageH]);
 
+  // Fond configurable
   const bgProps:any = useMemo(()=>{
     if (background.type==='solid') return { fill: background.color1 };
     if (background.type==='linear') {
       const rad=(background.angleDeg||0)*Math.PI/180;
       const cx=pageW/2, cy=pageH/2, dx=Math.cos(rad)*pageW/2, dy=Math.sin(rad)*pageH/2;
-      return { fillLinearGradientStartPoint:{x:cx-dx,y:cy-dy}, fillLinearGradientEndPoint:{x:cx+dx,y:cy+dy}, fillLinearGradientColorStops:[0,background.color1,1,(background as any).color2] };
+      return {
+        fillLinearGradientStartPoint:{x:cx-dx,y:cy-dy},
+        fillLinearGradientEndPoint:{x:cx+dx,y:cy+dy},
+        fillLinearGradientColorStops:[0,background.color1,1,(background as any).color2]
+      };
     }
-    return { fillRadialGradientStartPoint:{x:pageW/2,y:pageH/2}, fillRadialGradientEndPoint:{x:pageW/2,y:pageH/2}, fillRadialGradientStartRadius:0, fillRadialGradientEndRadius:Math.max(pageW,pageH)/1.2, fillRadialGradientColorStops:[0,(background as any).color1,1,(background as any).color2] };
+    return {
+      fillRadialGradientStartPoint:{x:pageW/2,y:pageH/2},
+      fillRadialGradientEndPoint:{x:pageW/2,y:pageH/2},
+      fillRadialGradientStartRadius:0,
+      fillRadialGradientEndRadius:Math.max(pageW,pageH)/1.2,
+      fillRadialGradientColorStops:[0,(background as any).color1,1,(background as any).color2]
+    };
   },[background,pageW,pageH]);
 
   const selId = st.selectedIds[0] || null;
@@ -249,12 +303,16 @@ export default function EditorCanvas() {
       <div className="mx-auto my-6" style={{ width: viewportW, height: viewportH }}>
         <Stage ref={stageRef} width={viewportW} height={viewportH} scaleX={zoom} scaleY={zoom} className="rounded-xl shadow-2xl bg-white">
           <Layer>
+            {/* fond */}
             <Rect x={0} y={0} width={pageW} height={pageH} cornerRadius={6} onMouseDown={handleBgClick} {...bgProps} />
 
+            {/* grille */}
             {guides}
 
+            {/* pli */}
             <Line points={[pageW/2,0,pageW/2,pageH]} stroke="#0f172a" strokeWidth={1.5} listening={false} strokeScaleEnabled={false} />
 
+            {/* bleed & safe */}
             {showGuides && (
               <>
                 <Rect x={0} y={0} width={pageW} height={pageH} stroke="#ef4444" dash={[8,4]} strokeWidth={1.25} listening={false} strokeScaleEnabled={false} />
@@ -263,11 +321,13 @@ export default function EditorCanvas() {
               </>
             )}
 
+            {/* items */}
             {page.items.map((it:any)=> it.kind==='photo'
               ? <PhotoNode key={it.id} pageId={page.id} item={it} onSnapLines={setSnapLines} />
               : <TextNode  key={it.id} pageId={page.id} item={it} />
             )}
 
+            {/* lignes d’aimantation */}
             {snapLines?.x !== undefined && (
               <Line points={[snapLines.x, 0, snapLines.x, pageH]} stroke="#6366f1" strokeWidth={2} dash={[6,4]} listening={false} strokeScaleEnabled={false} />
             )}
@@ -278,12 +338,15 @@ export default function EditorCanvas() {
         </Stage>
       </div>
 
+      {/* Aperçu plein écran (si tu déclenches l’event window.dispatchEvent(new Event('raventech-preview'))) */}
       {previewSrc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={()=>setPreviewSrc(null)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={previewSrc} alt="Aperçu" className="max-w-[95vw] max-h-[90vh] rounded-lg shadow-2xl" />
         </div>
       )}
 
+      {/* Debug barre basse */}
       <div className="fixed left-3 bottom-3 z-50 rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-700 shadow">
         <div>Assets: {st.assets.length} — Items page: {page.items.length}</div>
         {selItem && (

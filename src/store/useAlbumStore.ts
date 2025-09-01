@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 import { supabaseBrowser } from '@/lib/supabase/browser';
@@ -29,7 +30,7 @@ export type PhotoItem = {
   kind: 'photo';
   id: string;
   assetId: string;
-  ar: number; // ⬅️ ratio d’origine (w/h)
+  ar: number; // ratio d’origine (w/h)
   x: number; y: number;
   width: number; height: number;
   rotation: number;
@@ -48,9 +49,9 @@ export type TextItem = {
   align: 'left'|'center'|'right';
   rotation: number;
   color: string;
-  fontWeight?: number;        // ⬅️ ajouté
-  letterSpacing?: number;     // ⬅️ (optionnel)
-  lineHeight?: number;        // ⬅️ (optionnel)
+  fontWeight?: number;
+  letterSpacing?: number;
+  lineHeight?: number;
 };
 
 export type Page = { id: string; items: (PhotoItem|TextItem)[] };
@@ -247,7 +248,9 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
   removeAsset: (id)=> set(s=>{
     const a = s.assets.find(x=>x.id===id);
     if (a) URL.revokeObjectURL(a.url);
-    return { assets: s.assets.filter(x=>x.id!==id) };
+    // retire aussi tout item qui l'utilise et libère l'état used
+    const pages = s.pages.map(p => ({ ...p, items: p.items.filter((it:any)=> !(it.kind==='photo' && it.assetId===id)) }));
+    return { assets: s.assets.filter(x=>x.id!==id), pages, selectedIds: [] };
   }),
 
   // --- placement auto (préserve l'homothétie grâce à ar) ---
@@ -308,7 +311,7 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
       kind: 'photo',
       id: nanoid(),
       assetId,
-      ar, // ⬅️ ratio sauvegardé
+      ar, // ratio sauvegardé
       x: Math.round(placedX),
       y: Math.round(placedY),
       width: Math.round(w),
@@ -346,35 +349,34 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     });
   },
 
-addText: (x, y, text = 'Votre titre') =>
-  set((s) => {
-    const page = s.pages[s.currentIndex];
+  addText: (x, y, text = 'Votre titre') =>
+    set((s) => {
+      const page = s.pages[s.currentIndex];
 
-    const item: TextItem = {
-      kind: 'text',
-      id: nanoid(),
-      text,
-      x: Math.round(safeNum(x, 20)),
-      y: Math.round(safeNum(y, 20)),
-      width: 480,
-      fontSize: 48,
-      fontFamily: 'Inter, system-ui, sans-serif',
-      align: 'left',
-      rotation: 0,
-      color: '#000',
-      fontWeight: 400,     // si tu as ajouté ce champ
-      letterSpacing: 0,    // optionnel
-      lineHeight: 1.2      // optionnel
-    };
+      const item: TextItem = {
+        kind: 'text',
+        id: nanoid(),
+        text,
+        x: Math.round(safeNum(x, 20)),
+        y: Math.round(safeNum(y, 20)),
+        width: 480,
+        fontSize: 48,
+        fontFamily: 'Inter, system-ui, sans-serif',
+        align: 'left',
+        rotation: 0,
+        color: '#000',
+        fontWeight: 400,
+        letterSpacing: 0,
+        lineHeight: 1.2
+      };
 
-    const pages = s.pages.slice();
-    pages[s.currentIndex] = { ...page, items: [...page.items, item] };
+      const pages = s.pages.slice();
+      pages[s.currentIndex] = { ...page, items: [...page.items, item] };
 
-    // 🔁 IMPORTANT: retourner l'objet partiel d’état
-    return { pages, selectedIds: [item.id], tool: 'select' };
-  }),
+      return { pages, selectedIds: [item.id], tool: 'select' };
+    }),
 
-  // 🔒 MAJ homothétique systématique
+  // 🔒 MAJ homothétique systématique sur les photos
   updateItem: (pageId,itemId,patch)=> set(s=>{
     const pages = s.pages.map(pg => {
       if (pg.id!==pageId) return pg;
@@ -384,11 +386,9 @@ addText: (x, y, text = 'Votre titre') =>
           if (it.id!==itemId) return it;
           if (it.kind==='photo') {
             const p = patch as Partial<PhotoItem>;
-            const ar = it.ar ||  (p as any).ar ||  (()=>{
-              const asset = s.assets.find(a=>a.id===it.assetId);
-              return safeAR(asset?.w, asset?.h);
-            })();
-            // si width ou height fournis, on recalcule l’autre avec ar
+            const asset = s.assets.find(a=>a.id===it.assetId);
+            const ar = it.ar || p.ar || safeAR(asset?.w, asset?.h);
+
             let width  = safeDim(p.width  ?? it.width,  20);
             let height = safeDim(p.height ?? it.height, 20);
             if ('width' in p && !('height' in p)) height = Math.round(width / ar);
@@ -402,7 +402,7 @@ addText: (x, y, text = 'Votre titre') =>
               y: Math.round(safeNum(p.y ?? it.y, it.y)),
               width, height,
               rotation: safeNum(p.rotation ?? it.rotation, it.rotation),
-              scaleX: 1, // on normalise après transform
+              scaleX: 1,
               scaleY: 1,
               opacity: safeNum(p.opacity ?? it.opacity, it.opacity),
             } as PhotoItem;
