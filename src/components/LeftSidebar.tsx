@@ -1,238 +1,334 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useAlbumStore, ALBUM_SIZES } from '@/store/useAlbumStore';
-import { useMemo } from 'react';
+import React from 'react';
+import { useAlbumStore, ALBUM_SIZES, Background, Page, PhotoItem, TextItem } from '@/store/useAlbumStore';
+import { nanoid } from 'nanoid';
+
+function Section({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-600">{title}</h3>
+        {right}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export default function LeftSidebar() {
   const st = useAlbumStore();
-  const page = st.pages[st.currentIndex];
-  const selId = st.selectedIds[0] ?? null;
-  const selItem = useMemo(() => page.items.find((i: any) => i.id === selId) as any, [page, selId]);
 
-  const bg = st.background as any;
+  const page: Page = st.pages[st.currentIndex];
+  const selId = st.selectedIds[0] || null;
+  const selItem = selId ? (page.items.find((i: any) => i.id === selId) as PhotoItem | TextItem | undefined) : undefined;
+
+  // Helpers sûrs
+  const isPhoto = (it: any): it is PhotoItem => it && it.kind === 'photo';
+  const isText = (it: any): it is TextItem => it && it.kind === 'text';
+
+  const handleBackground = (bg: Background) => st.setBackground(bg);
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      {/* Taille + Zoom */}
-      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Taille de l’album
-        </div>
-        <select
-          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          value={st.size.label}
-          onChange={(e) => {
-            const s = ALBUM_SIZES.find((x) => x.label === e.target.value)!;
-            st.setSize(s);
-            setTimeout(() => window.dispatchEvent(new CustomEvent('raventech-fit')), 0);
-          }}
-        >
-          {ALBUM_SIZES.map((s) => (
-            <option key={s.label} value={s.label}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-
-        <div className="mt-3 flex items-center justify-between text-sm">
-          <span>Zoom</span>
-          <div className="flex items-center gap-2">
+    <aside className="flex h-full flex-col gap-3 overflow-y-auto p-3">
+      {/* PAGES */}
+      <Section
+        title={`Pages (${st.pages.length})`}
+        right={
+          <div className="flex gap-2">
             <button
-              className="rounded border border-slate-200 px-2 py-1"
-              onClick={() => st.setZoom(Math.max(0.1, st.zoom - 0.05))}
+              className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50 active:scale-[0.98]"
+              onClick={() => st.addPage()}
+            >
+              +
+            </button>
+            <button
+              className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50 active:scale-[0.98]"
+              onClick={() => st.removePage(st.currentIndex)}
             >
               –
             </button>
-            <span className="w-12 text-center tabular-nums">{Math.round(st.zoom * 100)}%</span>
-            <button
-              className="rounded border border-slate-200 px-2 py-1"
-              onClick={() => st.setZoom(Math.min(3, st.zoom + 0.05))}
-            >
-              +
-            </button>
           </div>
-        </div>
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent('raventech-fit'))}
-          className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
-        >
-          Adapter
-        </button>
-      </div>
-
-      {/* Auto-layout & Auto-fill */}
-      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Mise en page automatique
-        </div>
-        <div className="grid grid-cols-4 gap-2">
-          {[1,2,3,4].map((c)=>(
-            <button
-              key={c}
-              onClick={()=>st.autoLayout(c as 1|2|3|4)}
-              className="rounded border border-slate-200 px-2 py-1 text-sm hover:bg-slate-50"
-            >
-              {c} col
-            </button>
-          ))}
-          <button onClick={()=>st.autoLayoutAuto()} className="col-span-2 rounded border border-slate-200 px-2 py-1 text-sm hover:bg-slate-50">
-            Auto
-          </button>
-          <button onClick={()=>st.autoLayoutMosaic()} className="col-span-2 rounded border border-slate-200 px-2 py-1 text-sm hover:bg-slate-50">
-            Mosaïque
-          </button>
-        </div>
-        <div className="mt-2 grid grid-cols-4 gap-2">
-          {[1,2,3,4].map((c)=>(
-            <button
-              key={'fill'+c}
-              onClick={()=>st.autoFill(c as 1|2|3|4)}
-              className="rounded border border-slate-200 px-2 py-1 text-sm hover:bg-slate-50"
-            >
-              Fill {c}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Arrière-plan */}
-      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Arrière-plan
-        </div>
-        <div className="mb-2">
-          <select
-            className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-            value={st.background.type}
-            onChange={(e) => {
-              const t = e.target.value as 'solid'|'linear'|'radial';
-              if (t === 'solid') st.setBackground({ type:'solid', color1: bg.color1 ?? '#ffffff' });
-              if (t === 'linear') st.setBackground({ type:'linear', color1: bg.color1 ?? '#ffffff', color2: bg.color2 ?? '#f1f5f9', angleDeg: bg.angleDeg ?? 0 });
-              if (t === 'radial') st.setBackground({ type:'radial', color1: bg.color1 ?? '#ffffff', color2: bg.color2 ?? '#f1f5f9' });
-            }}
-          >
-            <option value="solid">Uni</option>
-            <option value="linear">Dégradé linéaire</option>
-            <option value="radial">Dégradé radial</option>
-          </select>
-        </div>
-
-        {/* Couleurs */}
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex items-center justify-between gap-2 text-sm">
-            <span>Couleur 1</span>
-            <input
-              type="color"
-              value={bg.color1 ?? '#ffffff'}
-              onChange={(e)=> st.setBackground({ ...(st.background as any), color1: e.target.value })}
-            />
-          </label>
-          {(st.background.type !== 'solid') && (
-            <label className="flex items-center justify-between gap-2 text-sm">
-              <span>Couleur 2</span>
-              <input
-                type="color"
-                value={bg.color2 ?? '#f1f5f9'}
-                onChange={(e)=> st.setBackground({ ...(st.background as any), color2: e.target.value })}
-              />
-            </label>
-          )}
-        </div>
-
-        {st.background.type === 'linear' && (
-          <label className="mt-2 block text-sm">
-            Angle ({bg.angleDeg ?? 0}°)
-            <input
-              type="range" min={0} max={360} value={bg.angleDeg ?? 0}
-              onChange={(e)=> st.setBackground({ ...(st.background as any), angleDeg: parseInt(e.target.value,10) })}
-              className="w-full"
-            />
-          </label>
-        )}
-      </div>
-
-      {/* Outils élément sélectionné */}
-      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Élément sélectionné
-        </div>
-
-        {selItem ? (
-          <div className="space-y-2 text-sm">
-            <div className="text-xs text-slate-500">ID: {selItem.id.slice(0,6)}…</div>
-
-            {/* Opacité (photo uniquement) */}
-            {selItem.kind === 'photo' && (
-              <label className="block">
-                Opacité ({Math.round((selItem.opacity ?? 1)*100)}%)
-                <input
-                  type="range" min={0.1} max={1} step={0.05}
-                  value={selItem.opacity ?? 1}
-                  onChange={(e)=>st.updateItem(page.id, selItem.id, { opacity: parseFloat(e.target.value) })}
-                  className="w-full"
-                />
-              </label>
-            )}
-
-            {/* Z-order */}
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={st.sendToBack} className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50">Tout derrière</button>
-              <button onClick={st.bringToFront} className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50">Tout devant</button>
-              <button onClick={st.sendBackward} className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50">Arrière</button>
-              <button onClick={st.bringForward} className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50">Avant</button>
-            </div>
-
-            <button
-              onClick={()=>st.deleteItem(page.id, selItem.id)}
-              className="mt-1 w-full rounded-md border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700 hover:bg-rose-100"
-            >
-              Supprimer
-            </button>
-          </div>
-        ) : (
-          <div className="text-sm text-slate-500">Aucune sélection.</div>
-        )}
-      </div>
-
-      {/* Pages empilées */}
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Pages ({st.pages.length})
-          </div>
-          <div className="flex gap-1">
-            <button
-              className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
-              onClick={() => st.addPage()}
-              title="Ajouter une page"
-            >
-              +
-            </button>
-            <button
-              className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
-              onClick={() => st.removePage(st.currentIndex)}
-              title="Supprimer la page courante"
-            >
-              −
-            </button>
-          </div>
-        </div>
-
+        }
+      >
         <div className="flex flex-col gap-2">
           {st.pages.map((p, i) => (
             <button
               key={p.id}
               onClick={() => st.goTo(i)}
-              className={`w-full rounded-lg border p-2 text-left ${
-                i === st.currentIndex ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+              className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
+                i === st.currentIndex
+                  ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200'
+                  : 'border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <div className="text-xs font-medium">Page {i + 1}</div>
-              <div className="mt-1 h-16 w-full rounded border border-dashed border-slate-300 bg-slate-50" />
+              Page {i + 1}
+              <div className="mt-2 h-14 rounded-lg border border-dashed border-slate-300 bg-slate-50" />
             </button>
           ))}
         </div>
-      </div>
-    </div>
+      </Section>
+
+      {/* FORMAT / ZOOM / GUIDES */}
+      <Section title="Affichage & format">
+        <div className="grid grid-cols-2 gap-2">
+          <label className="col-span-2 text-xs text-slate-500">Format</label>
+          <select
+            className="col-span-2 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+            value={st.size.label}
+            onChange={(e) => {
+              const s = ALBUM_SIZES.find((x) => x.label === e.target.value)!;
+              st.setSize(s);
+            }}
+          >
+            {ALBUM_SIZES.map((s) => (
+              <option key={s.label} value={s.label}>{s.label} cm</option>
+            ))}
+          </select>
+
+          <div className="col-span-2 mt-2 flex items-center justify-between">
+            <span className="text-xs text-slate-500">Zoom</span>
+            <span className="text-xs font-semibold">{Math.round(st.zoom * 100)}%</span>
+          </div>
+          <input
+            type="range" min={10} max={300} step={1}
+            value={Math.round(st.zoom * 100)}
+            onChange={(e)=> st.setZoom(Number(e.target.value)/100)}
+            className="col-span-2"
+          />
+
+          <div className="col-span-2 mt-2 grid grid-cols-2 gap-2">
+            <button
+              className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
+              onClick={() => window.dispatchEvent(new Event('raventech-preview'))}
+              title="Aperçu rapide"
+            >
+              Aperçu
+            </button>
+            <button
+              className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
+              onClick={() => window.dispatchEvent(new Event('raventech-fit'))}
+              title="Adapter à l’écran"
+            >
+              Ajuster
+            </button>
+          </div>
+
+          <div className="col-span-2 mt-2 grid grid-cols-2 gap-2">
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={st.showGrid} onChange={st.toggleGrid} />
+              Grille
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={st.showGuides} onChange={st.toggleGuides} />
+              Traits bleed/safe
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={st.snap} onChange={st.toggleSnap} />
+              Snap grille
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={st.magnet} onChange={st.toggleMagnet} />
+              Aimantation
+            </label>
+          </div>
+
+          <div className="col-span-2 grid grid-cols-2 gap-2">
+            <div>
+              <div className="mb-1 text-xs text-slate-500">Grille (px)</div>
+              <input
+                type="number"
+                className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                value={st.gridSize}
+                onChange={(e)=> st.setGridSize(Math.max(8, Math.floor(Number(e.target.value) || 40)))}
+              />
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-slate-500">Tolérance aimant</div>
+              <input
+                type="number"
+                className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                value={st.magnetTol}
+                onChange={(e)=> st.setMagnetTol(Math.max(1, Math.floor(Number(e.target.value) || 8)))}
+              />
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* BACKGROUND */}
+      <Section title="Arrière-plan">
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className={`rounded-lg border px-2 py-1 text-sm ${st.background.type==='solid' ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 hover:bg-slate-50'}`}
+            onClick={()=> handleBackground({ type:'solid', color1: (st.background as any).color1 ?? '#ffffff' })}
+          >
+            Uni
+          </button>
+          <button
+            className={`rounded-lg border px-2 py-1 text-sm ${st.background.type==='linear' ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 hover:bg-slate-50'}`}
+            onClick={()=> handleBackground({ type:'linear', color1:'#ffffff', color2:'#f1f5f9', angleDeg: 0 })}
+          >
+            Dégradé linéaire
+          </button>
+          <button
+            className={`col-span-2 rounded-lg border px-2 py-1 text-sm ${st.background.type==='radial' ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 hover:bg-slate-50'}`}
+            onClick={()=> handleBackground({ type:'radial', color1:'#ffffff', color2:'#f1f5f9' })}
+          >
+            Dégradé radial
+          </button>
+
+          {/* Couleurs / angle */}
+          <div className="col-span-2 mt-2 grid grid-cols-2 gap-2">
+            <div>
+              <div className="mb-1 text-xs text-slate-500">Couleur 1</div>
+              <input
+                type="color"
+                className="h-9 w-full rounded"
+                value={(st.background as any).color1 ?? '#ffffff'}
+                onChange={(e)=> {
+                  const cur = st.background;
+                  if (cur.type === 'solid') handleBackground({ type:'solid', color1: e.target.value });
+                  if (cur.type === 'linear') handleBackground({ ...cur, color1: e.target.value });
+                  if (cur.type === 'radial') handleBackground({ ...cur, color1: e.target.value });
+                }}
+              />
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-slate-500">Couleur 2</div>
+              <input
+                type="color"
+                className="h-9 w-full rounded"
+                value={(st.background as any).color2 ?? '#f1f5f9'}
+                onChange={(e)=> {
+                  const cur = st.background;
+                  if (cur.type === 'linear') handleBackground({ ...cur, color2: e.target.value });
+                  if (cur.type === 'radial') handleBackground({ ...cur, color2: e.target.value });
+                }}
+                disabled={st.background.type === 'solid'}
+              />
+            </div>
+            <div className="col-span-2">
+              <div className="mb-1 text-xs text-slate-500">Angle (linéaire)</div>
+              <input
+                type="range" min={0} max={360}
+                value={(st.background as any).angleDeg ?? 0}
+                onChange={(e)=> {
+                  const cur = st.background;
+                  if (cur.type === 'linear') handleBackground({ ...cur, angleDeg: Number(e.target.value) });
+                }}
+                disabled={st.background.type !== 'linear'}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* LAYOUTS */}
+      <Section title="Layouts">
+        <div className="grid grid-cols-2 gap-2">
+          <button className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50" onClick={()=> st.autoLayout(1)}>Grille 1</button>
+          <button className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50" onClick={()=> st.autoLayout(2)}>Grille 2</button>
+          <button className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50" onClick={()=> st.autoLayout(3)}>Grille 3</button>
+          <button className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50" onClick={()=> st.autoLayout(4)}>Grille 4</button>
+
+          <button className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50" onClick={()=> st.autoLayoutAuto()}>Auto (√N)</button>
+          <button className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50" onClick={()=> st.autoLayoutMosaic()}>Mosaïque</button>
+
+          <button className="col-span-2 rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50" onClick={()=> st.autoFill(3)}>
+            Auto-remplir (+range)
+          </button>
+        </div>
+      </Section>
+
+      {/* ITEM SÉLECTIONNÉ : styles/Z-order */}
+      <Section title="Élément sélectionné">
+        {!selItem && <div className="text-xs text-slate-500">Aucun élément sélectionné.</div>}
+
+        {isPhoto(selItem) && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-2 text-xs text-slate-500">Opacité</div>
+            <input
+              type="range" min={0.1} max={1} step={0.05}
+              value={selItem.opacity ?? 1}
+              onChange={(e)=> st.updateItem(page.id, selItem.id, { opacity: parseFloat(e.target.value) })}
+              className="col-span-2"
+            />
+
+            <div className="col-span-2 mt-2 grid grid-cols-2 gap-2">
+              <button
+                className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
+                onClick={()=> st.sendToBack(page.id, selItem.id)}
+              >
+                Envoyer arrière
+              </button>
+              <button
+                className="rounded-lg border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
+                onClick={()=> st.bringToFront(page.id, selItem.id)}
+              >
+                Mettre devant
+              </button>
+            </div>
+
+            <button
+              className="col-span-2 rounded-lg border border-rose-300 bg-rose-50 px-2 py-1 text-sm text-rose-700 hover:bg-rose-100"
+              onClick={()=> st.deleteItem(page.id, selItem.id)}
+            >
+              Supprimer
+            </button>
+          </div>
+        )}
+
+        {isText(selItem) && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-2">
+              <div className="mb-1 text-xs text-slate-500">Taille</div>
+              <input
+                type="number"
+                className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                value={selItem.fontSize}
+                onChange={(e)=> st.updateItem(page.id, selItem.id, { fontSize: Math.max(8, Math.floor(Number(e.target.value) || 12)) })}
+              />
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-slate-500">Graisse</div>
+              <select
+                className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                value={selItem.fontWeight ?? 400}
+                onChange={(e)=> st.updateItem(page.id, selItem.id, { fontWeight: Number(e.target.value) })}
+              >
+                <option value={300}>Light</option>
+                <option value={400}>Regular</option>
+                <option value={600}>SemiBold</option>
+                <option value={700}>Bold</option>
+              </select>
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-slate-500">Couleur</div>
+              <input
+                type="color"
+                className="h-9 w-full rounded"
+                value={selItem.color}
+                onChange={(e)=> st.updateItem(page.id, selItem.id, { color: e.target.value })}
+              />
+            </div>
+            <div className="col-span-2 grid grid-cols-3 gap-2">
+              <button className={`rounded-lg border px-2 py-1 text-xs ${selItem.align==='left'?'border-indigo-400 bg-indigo-50':'border-slate-300 hover:bg-slate-50'}`} onClick={()=> st.updateItem(page.id, selItem.id, { align:'left' })}>Gauche</button>
+              <button className={`rounded-lg border px-2 py-1 text-xs ${selItem.align==='center'?'border-indigo-400 bg-indigo-50':'border-slate-300 hover:bg-slate-50'}`} onClick={()=> st.updateItem(page.id, selItem.id, { align:'center' })}>Centre</button>
+              <button className={`rounded-lg border px-2 py-1 text-xs ${selItem.align==='right'?'border-indigo-400 bg-indigo-50':'border-slate-300 hover:bg-slate-50'}`} onClick={()=> st.updateItem(page.id, selItem.id, { align:'right' })}>Droite</button>
+            </div>
+
+            <button
+              className="col-span-2 mt-2 rounded-lg border border-rose-300 bg-rose-50 px-2 py-1 text-sm text-rose-700 hover:bg-rose-100"
+              onClick={()=> st.deleteItem(page.id, selItem.id)}
+            >
+              Supprimer
+            </button>
+          </div>
+        )}
+      </Section>
+    </aside>
   );
 }

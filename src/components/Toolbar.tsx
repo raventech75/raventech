@@ -8,23 +8,45 @@ type Props = {
   onFit?: () => void;
 };
 
+/** Déclare les helpers exposés par EditorCanvas pour éviter les erreurs TS. */
+declare global {
+  interface Window {
+    ravenCaptureOne?: () => Promise<{ dataUrl: string; pagePx: { w: number; h: number } }>;
+    ravenCaptureAll?: () => Promise<Array<{ dataUrl: string; pagePx: { w: number; h: number } }>>;
+  }
+}
+
 export default function Toolbar({ onFit }: Props) {
   const st = useAlbumStore();
   const [busy, setBusy] = useState<false | 'one' | 'all'>(false);
 
+  function doFit() {
+    if (onFit) return onFit();
+    // Fallback: laisse l’EditorCanvas s’ajuster via un event global
+    window.dispatchEvent(new Event('raventech-fit'));
+  }
+
+  function preview() {
+    window.dispatchEvent(new Event('raventech-preview'));
+  }
+
+  function logout() {
+    // supprime les cookies côté serveur puis redirige
+    window.location.href = '/api/auth/clear-cookie';
+  }
+
   async function exportOne() {
     try {
       setBusy('one');
-      // exposé par EditorCanvas via window.ravenCaptureOne
-      const cap: { dataUrl: string; pagePx: { w: number; h: number } } | undefined =
-        (window as any)?.ravenCaptureOne ? await (window as any).ravenCaptureOne() : undefined;
+
+      const cap = await window.ravenCaptureOne?.();
       if (!cap?.dataUrl) throw new Error('Capture page échouée');
 
       const payload = {
         images: [cap.dataUrl],
         pagePx: cap.pagePx,
         dpi: st.dpi,
-        cropMarks: st.cropMarks,
+        // cropMarks supprimé car non présent dans le store
       };
 
       const res = await fetch('/api/export-pdf', {
@@ -49,20 +71,15 @@ export default function Toolbar({ onFit }: Props) {
   async function exportAll() {
     try {
       setBusy('all');
-      // exposé par EditorCanvas via window.ravenCaptureAll
-      const caps:
-        | { dataUrl: string; pagePx: { w: number; h: number } }[]
-        | undefined = (window as any)?.ravenCaptureAll
-        ? await (window as any).ravenCaptureAll()
-        : undefined;
 
+      const caps = await window.ravenCaptureAll?.();
       if (!caps?.length) throw new Error('Aucune capture disponible');
 
       const payload = {
         images: caps.map((c) => c.dataUrl),
         pagePx: caps[0].pagePx,
         dpi: st.dpi,
-        cropMarks: st.cropMarks,
+        // cropMarks supprimé car non présent dans le store
       };
 
       const res = await fetch('/api/export-pdf', {
@@ -90,11 +107,20 @@ export default function Toolbar({ onFit }: Props) {
       <div className="flex items-center gap-3 text-sm">
         <button
           type="button"
-          onClick={onFit}
+          onClick={doFit}
           className="rounded-md border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50"
           title="Adapter la page à l’écran"
         >
           Adapter à l’écran
+        </button>
+
+        <button
+          type="button"
+          onClick={preview}
+          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50"
+          title="Aperçu rapide"
+        >
+          Aperçu
         </button>
 
         <div className="h-5 w-px bg-slate-300" />
@@ -106,15 +132,6 @@ export default function Toolbar({ onFit }: Props) {
             onChange={() => st.toggleGuides()}
           />
           <span>Repères</span>
-        </label>
-
-        <label className="inline-flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={st.cropMarks}
-            onChange={(e) => st.setCropMarks(e.target.checked)}
-          />
-          <span>Traits de coupe</span>
         </label>
 
         <label className="inline-flex items-center gap-2">
@@ -131,7 +148,7 @@ export default function Toolbar({ onFit }: Props) {
         </label>
       </div>
 
-      {/* Bloc droit : export */}
+      {/* Bloc droit : export + logout */}
       <div className="flex items-center gap-2">
         <button
           onClick={exportOne}
@@ -146,6 +163,16 @@ export default function Toolbar({ onFit }: Props) {
           className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
         >
           {busy === 'all' ? 'Export…' : 'Exporter tout'}
+        </button>
+
+        <div className="h-5 w-px bg-slate-300" />
+
+        <button
+          onClick={logout}
+          className="rounded-md border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100"
+          title="Se déconnecter"
+        >
+          Déconnexion
         </button>
       </div>
     </div>
