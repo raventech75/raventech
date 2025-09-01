@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 
+
 // (optionnel) forcer dynamique si tu préfères
 // export const dynamic = 'force-dynamic';
 
@@ -62,24 +63,29 @@ function SignInForm() {
   if (err) throw err;
 
   // 2) récupérer la session
-  const sess = await supabaseBrowser.auth.getSession();
-  const at = sess.data.session?.access_token;
-  const rt = sess.data.session?.refresh_token;
+const sess = await supabaseBrowser.auth.getSession();
+const at = sess.data.session?.access_token;
+const rt = sess.data.session?.refresh_token;
 
   // 3) synchroniser les cookies httpOnly côté serveur (pour middleware/SSR)
-  if (at && rt) {
-    await fetch('/api/auth/set-cookie', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ access_token: at, refresh_token: rt }),
-    });
+ if (at && rt) {
+  // ⚠️ URL RELATIVE pour rester même origine (évite www vs apex)
+  const res = await fetch('/api/auth/set-cookie', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include', // ok même en same-site; requis si un jour tu fais cross-site
+    body: JSON.stringify({ access_token: at, refresh_token: rt }),
+  });
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Sync cookies failed (${res.status}) ${t}`);
   }
+}
 
   // 4) redirection
   const redirect = params.get('redirect') || '/dashboard';
-  await new Promise((r) => setTimeout(r, 200));
-  router.replace(redirect);
+router.replace(redirect);
 } catch (err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
   setError(msg || 'Une erreur est survenue. Réessayez.');
