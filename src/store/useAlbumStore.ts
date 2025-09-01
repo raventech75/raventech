@@ -93,6 +93,9 @@ export type AlbumState = {
   showGuides: boolean;
   snap: boolean;
 
+  cropMarks: boolean;
+  setCropMarks: (v: boolean) => void;
+
   magnet: boolean;
   magnetTol: number;
   toggleMagnet: ()=>void;
@@ -153,6 +156,10 @@ export type AlbumState = {
   autoLayoutAuto: ()=>void;
   autoLayoutMosaic: ()=>void;
   autoFill: (columns:1|2|3|4)=>void;
+  bringForward: () => void;
+  sendBackward: () => void;
+  bringToFront: () => void;
+  sendToBack: () => void;
 
   project: Project|null;
   setProject: (p:Project|null)=>void;
@@ -169,6 +176,9 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
   gridSize: 40,
   showGuides: true,
   snap: true,
+
+  cropMarks: false,
+  setCropMarks: (v) => set({ cropMarks: v }),
 
   magnet: true,
   magnetTol: 8,
@@ -554,7 +564,61 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     candidates.forEach(asset=> get().placePhotoAuto(asset.id, (get().cmToPx(s.size.w*2) - 2*get().mmToPx(s.bleedMm)) / 3 ));
     return get() as any;
   }),
+  bringForward: () => set((s) => {
+    const pg = s.pages[s.currentIndex];
+    if (!s.selectedIds[0]) return s as any;
+    const id = s.selectedIds[0];
+    const idx = pg.items.findIndex((i: any) => i.id === id);
+    if (idx < 0 || idx === pg.items.length - 1) return s as any;
+    const items = pg.items.slice();
+    const [it] = items.splice(idx, 1);
+    items.splice(idx + 1, 0, it);
+    const pages = s.pages.slice();
+    pages[s.currentIndex] = { ...pg, items };
+    return { pages };
+  }),
 
+  sendBackward: () => set((s) => {
+    const pg = s.pages[s.currentIndex];
+    if (!s.selectedIds[0]) return s as any;
+    const id = s.selectedIds[0];
+    const idx = pg.items.findIndex((i: any) => i.id === id);
+    if (idx <= 0) return s as any;
+    const items = pg.items.slice();
+    const [it] = items.splice(idx, 1);
+    items.splice(idx - 1, 0, it);
+    const pages = s.pages.slice();
+    pages[s.currentIndex] = { ...pg, items };
+    return { pages };
+  }),
+
+  bringToFront: () => set((s) => {
+    const pg = s.pages[s.currentIndex];
+    if (!s.selectedIds[0]) return s as any;
+    const id = s.selectedIds[0];
+    const idx = pg.items.findIndex((i: any) => i.id === id);
+    if (idx < 0 || idx === pg.items.length - 1) return s as any;
+    const items = pg.items.slice();
+    const [it] = items.splice(idx, 1);
+    items.push(it);
+    const pages = s.pages.slice();
+    pages[s.currentIndex] = { ...pg, items };
+    return { pages };
+  }),
+
+  sendToBack: () => set((s) => {
+    const pg = s.pages[s.currentIndex];
+    if (!s.selectedIds[0]) return s as any;
+    const id = s.selectedIds[0];
+    const idx = pg.items.findIndex((i: any) => i.id === id);
+    if (idx <= 0) return s as any;
+    const items = pg.items.slice();
+    const [it] = items.splice(idx, 1);
+    items.unshift(it);
+    const pages = s.pages.slice();
+    pages[s.currentIndex] = { ...pg, items };
+    return { pages };
+  }),
   project: null,
   setProject: (p)=> set({ project:p }),
   saveToSupabase: async ()=>{

@@ -1,16 +1,24 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useAlbumStore } from '@/store/useAlbumStore';
+
+const PAGE_SIZE = 10;
 
 export default function RightPanel() {
   const st = useAlbumStore();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [progress, setProgress] = useState<null | { done: number; total: number }>(null);
+  const [page, setPage] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil(st.assets.length / PAGE_SIZE));
+  const visible = useMemo(() => {
+    const start = page * PAGE_SIZE;
+    return st.assets.slice(start, start + PAGE_SIZE);
+  }, [st.assets, page]);
 
   const onPick = async (files: FileList | null) => {
     if (!files || !files.length) return;
-    // Progression grossière: on “stream” par blocs en utilisant requestIdleCallback
     const arr = Array.from(files);
     const total = arr.length;
     let done = 0;
@@ -19,10 +27,9 @@ export default function RightPanel() {
     const chunkSize = 4;
     for (let i = 0; i < arr.length; i += chunkSize) {
       const slice = arr.slice(i, i + chunkSize);
-      await st.addAssets(slice); // ta fonction gère déjà le décodage performant
+      await st.addAssets(slice);
       done = Math.min(total, i + slice.length);
       setProgress({ done, total });
-      // Laisse respirer le thread
       await new Promise((r) =>
         ('requestIdleCallback' in window
           ? (window as any).requestIdleCallback(() => r(null))
@@ -30,6 +37,7 @@ export default function RightPanel() {
       );
     }
     setProgress(null);
+    setPage(0);
   };
 
   return (
@@ -74,21 +82,39 @@ export default function RightPanel() {
         )}
       </div>
 
-      {/* Carrousel des assets */}
+      {/* Bibliothèque */}
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between px-3 py-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Bibliothèque ({st.assets.length})
           </div>
-          <div className="text-xs text-slate-500">
-            Utilisées: {st.assets.filter((a) => a.used).length}
-          </div>
+          {st.assets.length > PAGE_SIZE && (
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+              >
+                ◀
+              </button>
+              <span className="tabular-nums">
+                {page + 1}/{totalPages}
+              </span>
+              <button
+                className="rounded border border-slate-200 px-2 py-1 hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+              >
+                ▶
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Carrousel horizontal */}
+        {/* Carrousel */}
         <div className="h-[calc(100%-40px)] overflow-auto px-2 pb-2">
           <div className="flex gap-2">
-            {st.assets.map((a) => (
+            {visible.map((a) => (
               <div
                 key={a.id}
                 className={`relative w-32 shrink-0 rounded-lg border p-2 ${
@@ -118,12 +144,11 @@ export default function RightPanel() {
                     <button
                       className="rounded border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
                       onClick={() => {
-                        // Retire TOUTES les occurrences de cet asset de la page en cours
-                        const page = st.pages[st.currentIndex];
-                        const toDelete = page.items.filter(
+                        const pg = st.pages[st.currentIndex];
+                        const toDelete = pg.items.filter(
                           (it: any) => it.kind === 'photo' && it.assetId === a.id
                         );
-                        toDelete.forEach((it: any) => st.deleteItem(page.id, it.id));
+                        toDelete.forEach((it: any) => st.deleteItem(pg.id, it.id));
                       }}
                     >
                       Retirer
