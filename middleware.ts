@@ -1,32 +1,28 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 export const config = {
-  matcher: [
-    '/dashboard',
-    '/editor',
-    '/projects/:path*',
-  ],
+  matcher: ["/", "/editor", "/projects/:path*"],
 };
 
-export async function middleware(req: NextRequest) {
+export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
-  // Laisse passer toujours ces routes
-  if (pathname.startsWith('/api')) return NextResponse.next();
-  if (pathname.startsWith('/auth')) return NextResponse.next();
-  if (pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up')) return NextResponse.next();
+  if (pathname.startsWith("/api")) return NextResponse.next();
+  if (pathname.startsWith("/sign-in") || pathname.startsWith("/sign-up")) return NextResponse.next();
 
-  // Test minimal: juste présence des cookies
-  const access = req.cookies.get('sb-access-token')?.value;
-  const refresh = req.cookies.get('sb-refresh-token')?.value;
+  const access = req.cookies.get("sb-access-token")?.value;
+  const refresh = req.cookies.get("sb-refresh-token")?.value;
 
   if (!access || !refresh) {
-    const url = new URL('/sign-in', req.url);
-    // préserve la cible
-    const redirectTo = pathname + (search || '');
-    url.searchParams.set('redirect', redirectTo);
+    const url = new URL("/sign-in", req.url);
+    url.searchParams.set("redirect", pathname + (search || ""));
     return NextResponse.redirect(url);
+  }
+
+  // si on est sur "/" → redirige vers /editor
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL("/editor", req.url));
   }
 
   return NextResponse.next();

@@ -5,6 +5,10 @@ import { supabaseServer } from '@/lib/supabase-server';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+<form action="/api/auth/sign-out" method="post">
+  <button className="rounded bg-slate-900 text-white px-3 py-1.5">Se déconnecter</button>
+</form>
+
 export default async function DashboardPage() {
   const sb = await supabaseServer();
   const { data } = await sb.auth.getUser();
