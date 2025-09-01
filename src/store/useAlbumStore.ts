@@ -30,12 +30,20 @@ export type PhotoItem = {
   kind: 'photo';
   id: string;
   assetId: string;
-  ar: number; // ratio d’origine (w/h)
+  ar: number;
   x: number; y: number;
   width: number; height: number;
   rotation: number;
   scaleX: number; scaleY: number;
   opacity: number;
+  borderW?: number;
+  borderColor?: string;
+  cornerR?: number;
+  // ⬇️ AJOUTS (fondus en pixels)
+  fadeTop?: number;
+  fadeBottom?: number;
+  fadeLeft?: number;
+  fadeRight?: number;
 };
 
 export type TextItem = {
@@ -71,6 +79,17 @@ const safeAR = (w?:number, h?:number) => {
 };
 const rectsOverlap = (a:{x:number;y:number;w:number;h:number}, b:{x:number;y:number;w:number;h:number}) =>
   !(a.x+a.w <= b.x || b.x+b.w <= a.x || a.y+a.h <= b.y || b.y+b.h <= a.y);
+
+function pLimit<T>(concurrency:number){
+  let active = 0;
+  const queue:(()=>void)[]=[];
+  const next=()=>{ active--; queue.shift()?.(); };
+  return async (fn:()=>Promise<T>)=>{
+    if (active>=concurrency) await new Promise<void>(res=>queue.push(res));
+    active++;
+    try { return await fn(); } finally { next(); }
+  };
+}
 
 export type AlbumState = {
   size: AlbumSizeCm;
@@ -135,6 +154,9 @@ export type AlbumState = {
   selectOnly: (id:string|null)=>void;
   toggleSelect: (id:string)=>void;
   selectNone: ()=>void;
+
+  bringToFront: ()=>void;
+  sendToBack: ()=>void;
 
   autoLayout: (columns: 1|2|3|4)=>void;
   autoLayoutAuto: ()=>void;
@@ -212,48 +234,46 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     return { assets, pages, pageCount: Math.max(2, s.pageCount-1), currentIndex: Math.min(s.currentIndex, pages.length-1), selectedIds: [] };
   }),
 
+  // ⚡️ Import ultra fluide (createImageBitmap + concurrence 6)
   addAssets: async (files) => {
     const list = Array.from(files);
-    const limit = Math.max(0, 150 - get().assets.length);
-    const slice = list.slice(0, limit);
+    const limitLeft = Math.max(0, 150 - get().assets.length);
+    const slice = list.slice(0, limitLeft);
 
-    const decodeOne = async (f: File) => {
-      try {
-        const bmp = await createImageBitmap(f);
+    const limit = pLimit(6);
+    const tasks = slice.map((f) =>
+      limit(async () => {
         const url = URL.createObjectURL(f);
-        // @ts-ignore
-        bmp.close?.();
-        const w = safeDim(bmp.width, 1000);
-        const h = safeDim(bmp.height, 667);
-        return { id: nanoid(), name: f.name, url, w, h, used:false };
-      } catch {
-        const url = URL.createObjectURL(f);
-        const dim = await new Promise<{w:number;h:number}>(res=>{
-          const im = new Image(); im.onload = ()=> res({ w: im.naturalWidth||1000, h: im.naturalHeight||667 }); im.src = url;
-        });
-        return { id: nanoid(), name: f.name, url, w: safeDim(dim.w,1000), h: safeDim(dim.h,667), used:false };
-      }
-    };
+        try {
+          const bmp = await createImageBitmap(f);
+          const w = safeDim(bmp.width, 1000);
+          const h = safeDim(bmp.height, 667);
+          // @ts-ignore
+          bmp.close?.();
+          return { id: nanoid(), name: f.name, url, w, h, used:false } as PhotoAsset;
+        } catch {
+          // fallback Image() si createImageBitmap échoue
+          const dim = await new Promise<{w:number;h:number}>(res=>{
+            const im = new Image(); im.onload = ()=> res({ w: im.naturalWidth||1000, h: im.naturalHeight||667 }); im.src = url;
+          });
+          return { id: nanoid(), name: f.name, url, w: safeDim(dim.w,1000), h: safeDim(dim.h,667), used:false } as PhotoAsset;
+        }
+      })
+    );
 
-    const batch: PhotoAsset[] = [];
-    for (const f of slice) {
-      if ('requestIdleCallback' in window) {
-        await new Promise<void>(r=>(window as any).requestIdleCallback(()=>r()));
-      }
-      batch.push(await decodeOne(f));
-    }
-    set(s=>({ assets: [...s.assets, ...batch] }));
+    const results = await Promise.allSettled(tasks);
+    const ok = results
+      .filter((r): r is PromiseFulfilledResult<PhotoAsset> => r.status === 'fulfilled')
+      .map((r) => r.value);
+    set((s)=>({ assets: [...s.assets, ...ok] }));
   },
 
   removeAsset: (id)=> set(s=>{
     const a = s.assets.find(x=>x.id===id);
     if (a) URL.revokeObjectURL(a.url);
-    // retire aussi tout item qui l'utilise et libère l'état used
-    const pages = s.pages.map(p => ({ ...p, items: p.items.filter((it:any)=> !(it.kind==='photo' && it.assetId===id)) }));
-    return { assets: s.assets.filter(x=>x.id!==id), pages, selectedIds: [] };
+    return { assets: s.assets.filter(x=>x.id!==id) };
   }),
 
-  // --- placement auto (préserve l'homothétie grâce à ar) ---
   placePhotoAuto: (assetId, baseTargetW)=> set(s=>{
     const asset = s.assets.find(a=>a.id===assetId);
     if (!asset) return s;
@@ -263,8 +283,9 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     const bleed = get().mmToPx(s.bleedMm);
     const area = { x: bleed, y: bleed, w: W-2*bleed, h: H-2*bleed };
 
+
     const ar = safeAR(asset.w, asset.h);
-    let w = safeDim(baseTargetW ?? area.w*0.4, 40);
+    let w = safeDim(baseTargetW ?? area.w*0.38, 40);
     if (w > area.w) w = area.w;
     let h = Math.round(w / ar);
     if (h > area.h) { h = area.h; w = Math.round(h * ar); }
@@ -307,11 +328,15 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
       }
     }
 
+    // Clamp final dans l’aire (évite “hors page”)
+    placedX = clamp(placedX, area.x, area.x + area.w - w);
+    placedY = clamp(placedY, area.y, area.y + area.h - h);
+
     const item: PhotoItem = {
       kind: 'photo',
       id: nanoid(),
       assetId,
-      ar, // ratio sauvegardé
+      ar,
       x: Math.round(placedX),
       y: Math.round(placedY),
       width: Math.round(w),
@@ -319,6 +344,9 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
       rotation: 0,
       scaleX: 1, scaleY: 1,
       opacity: 1,
+      borderW: 0,
+      borderColor: '#111827',
+      cornerR: 0,
     };
 
     const pages = s.pages.slice();
@@ -327,7 +355,6 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     return { pages, assets, selectedIds: [item.id] };
   }),
 
-  // compat : si x/y non fournis -> auto
   placePhoto: (assetId, x=null, y=null, targetW=null)=> {
     if (x==null || y==null) { get().placePhotoAuto(assetId, targetW ?? undefined); return; }
     set(s=>{
@@ -338,9 +365,11 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
       const height = Math.round(Math.max(40, width/ar));
       const page = s.pages[s.currentIndex];
       const item: PhotoItem = {
+        fadeTop: 0, fadeBottom: 0, fadeLeft: 0, fadeRight: 0,
         kind: 'photo', id:nanoid(), assetId, ar,
         x: Math.round(safeNum(x, 0)), y: Math.round(safeNum(y, 0)),
-        width, height, rotation:0, scaleX:1, scaleY:1, opacity:1
+        width, height, rotation:0, scaleX:1, scaleY:1, opacity:1,
+        borderW:0, borderColor:'#111827', cornerR:0
       };
       const pages = s.pages.slice();
       pages[s.currentIndex] = { ...page, items: [...page.items, item] };
@@ -352,7 +381,6 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
   addText: (x, y, text = 'Votre titre') =>
     set((s) => {
       const page = s.pages[s.currentIndex];
-
       const item: TextItem = {
         kind: 'text',
         id: nanoid(),
@@ -369,14 +397,11 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
         letterSpacing: 0,
         lineHeight: 1.2
       };
-
       const pages = s.pages.slice();
       pages[s.currentIndex] = { ...page, items: [...page.items, item] };
-
       return { pages, selectedIds: [item.id], tool: 'select' };
     }),
 
-  // 🔒 MAJ homothétique systématique sur les photos
   updateItem: (pageId,itemId,patch)=> set(s=>{
     const pages = s.pages.map(pg => {
       if (pg.id!==pageId) return pg;
@@ -386,9 +411,10 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
           if (it.id!==itemId) return it;
           if (it.kind==='photo') {
             const p = patch as Partial<PhotoItem>;
-            const asset = s.assets.find(a=>a.id===it.assetId);
-            const ar = it.ar || p.ar || safeAR(asset?.w, asset?.h);
-
+            const ar = it.ar ||  (()=>{
+              const asset = s.assets.find(a=>a.id===it.assetId);
+              return safeAR(asset?.w, asset?.h);
+            })();
             let width  = safeDim(p.width  ?? it.width,  20);
             let height = safeDim(p.height ?? it.height, 20);
             if ('width' in p && !('height' in p)) height = Math.round(width / ar);
@@ -405,6 +431,9 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
               scaleX: 1,
               scaleY: 1,
               opacity: safeNum(p.opacity ?? it.opacity, it.opacity),
+              borderW: p.borderW ?? it.borderW ?? 0,
+              borderColor: p.borderColor ?? it.borderColor ?? '#111827',
+              cornerR: p.cornerR ?? it.cornerR ?? 0,
             } as PhotoItem;
           }
           return { ...it, ...patch };
@@ -441,7 +470,24 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
   toggleSelect: (id)=> set(s=> s.selectedIds.includes(id) ? ({ selectedIds: s.selectedIds.filter(x=>x!==id) }) : ({ selectedIds:[...s.selectedIds,id] })),
   selectNone: ()=> set({ selectedIds: [] }),
 
-  // --- Layouts: toujours avec item.ar ---
+  bringToFront: ()=> set(s=>{
+    const sel = s.selectedIds[0]; if(!sel) return s;
+    const pg = s.pages[s.currentIndex];
+    const idx = pg.items.findIndex(i=>i.id===sel); if (idx<0) return s;
+    const items = pg.items.slice(); const [it] = items.splice(idx,1); items.push(it);
+    const pages = s.pages.slice(); pages[s.currentIndex] = { ...pg, items };
+    return { pages };
+  }),
+  sendToBack: ()=> set(s=>{
+    const sel = s.selectedIds[0]; if(!sel) return s;
+    const pg = s.pages[s.currentIndex];
+    const idx = pg.items.findIndex(i=>i.id===sel); if (idx<0) return s;
+    const items = pg.items.slice(); const [it] = items.splice(idx,1); items.unshift(it);
+    const pages = s.pages.slice(); pages[s.currentIndex] = { ...pg, items };
+    return { pages };
+  }),
+
+  // Layouts
   autoLayout: (columns)=> set(s=>{
     const pg = s.pages[s.currentIndex];
     const photos = pg.items.filter((i:any)=>i.kind==='photo') as PhotoItem[];
@@ -503,8 +549,9 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
   autoFill: (columns)=> set(s=>{
     const pg=s.pages[s.currentIndex];
     const usedHere = new Set(pg.items.filter((i:any)=>i.kind==='photo').map((i:any)=>i.assetId));
-    const candidates = s.assets.filter(a=>!a.used && !usedHere.has(a.id)).slice(0,columns);
-    candidates.forEach(asset=> get().placePhotoAuto(asset.id, (get().cmToPx(s.size.w*2) - 2*get().mmToPx(s.bleedMm)) / 3 ));
+    const candidates = s.assets.filter(a=>!a.used && !usedHere.has(a.id)).slice(0,columns*2);
+    candidates.forEach(asset=> get().placePhotoAuto(asset.id, (get().cmToPx(s.size.w*2) - 2*get().mmToPx(s.bleedMm)) / columns ));
+    get().autoLayout(columns);
     return get() as any;
   }),
 
@@ -530,3 +577,4 @@ export const useAlbumStore = create<AlbumState>((set,get)=>({
     set({ project:{id:proj.id,name:proj.name}, size:proj.size, pageCount:proj.page_count, background:proj.background, bleedMm:proj.bleed_mm, safeMm:proj.safe_mm, pages, currentIndex:0, selectedIds:[] });
   },
 }));
+

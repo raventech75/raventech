@@ -1,361 +1,339 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import React from 'react';
-import { ALBUM_SIZES, useAlbumStore } from '@/store/useAlbumStore';
+import { useAlbumStore, ALBUM_SIZES, type PhotoItem, type TextItem } from '@/store/useAlbumStore';
 
 export default function LeftSidebar() {
   const st = useAlbumStore();
+  const {
+    size, setSize,
+    zoom, setZoom,
+    pages, currentIndex, goTo,
+    autoLayout, autoLayoutAuto, autoLayoutMosaic, autoFill,
+    toggleGrid, showGrid, setGridSize, gridSize,
+    toggleGuides, showGuides, toggleSnap, snap,
+  } = st;
 
-  async function handleExportPDF() {
-    try {
-      // construit un payload simple pour la route export-pdf
-      const pagePx = {
-        w: st.cmToPx(st.size.w * 2),
-        h: st.cmToPx(st.size.h),
-      };
-
-      const pages = st.pages.map((p) => {
-        const images = p.items
-          .filter((i: any) => i.kind === 'photo')
-          .map((i: any) => {
-            const a = st.assets.find((x) => x.id === i.assetId);
-            return {
-              url: a?.url || '',
-              x: i.x,
-              y: i.y,
-              w: i.width,
-              h: i.height,
-              rotation: i.rotation || 0,
-              opacity: i.opacity ?? 1,
-            };
-          });
-
-        const texts = p.items
-          .filter((i: any) => i.kind === 'text')
-          .map((i: any) => ({
-            text: i.text || '',
-            x: i.x,
-            y: i.y,
-            width: i.width,
-            fontSize: i.fontSize,
-            fontFamily: i.fontFamily,
-            align: i.align,
-            rotation: i.rotation || 0,
-            color: i.color || '#000',
-            fontWeight: i.fontWeight ?? 400,
-            letterSpacing: i.letterSpacing ?? 0,
-            lineHeight: i.lineHeight ?? 1.2,
-          }));
-
-        return { images, texts };
-      });
-
-      const res = await fetch('/api/export-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pages,
-          pagePx,
-          dpi: st.dpi,
-          bleedMM: st.bleedMm,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Export PDF échoué');
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `raventech-${Date.now()}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      alert((e as Error).message || 'Erreur export PDF');
-    }
-  }
+  const page = pages[currentIndex];
+  const selId = st.selectedIds[0] || null;
+  const selItem = selId ? (page.items.find(i => i.id === selId) as (PhotoItem | TextItem | undefined)) : undefined;
 
   return (
-    <aside className="fixed left-0 top-0 z-30 h-full w-[280px] border-r border-slate-200 bg-white">
-      {/* En-tête */}
-      <div className="border-b border-slate-200 px-3 py-2">
-        <div className="text-sm font-semibold text-slate-900">Options</div>
-        <div className="text-xs text-slate-500">Mise en page & affichage</div>
-      </div>
-
-      <div className="no-scrollbar h-[calc(100%-88px)] overflow-y-auto px-3 py-3 text-slate-900">
-        {/* Taille d'album */}
-        <section className="mb-4">
-          <div className="mb-2 text-xs font-medium text-slate-600">Format album</div>
-          <div className="grid grid-cols-2 gap-2">
-            {ALBUM_SIZES.map((s) => (
+    <aside className="w-80 shrink-0 border-r border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 p-3 flex flex-col gap-4">
+      {/* FORMATS */}
+      <section>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Formats</h3>
+        <div className="grid grid-cols-2 gap-2">
+          {ALBUM_SIZES.map(s => {
+            const isActive = s.label === size.label;
+            return (
               <button
                 key={s.label}
-                onClick={() => st.setSize(s)}
-                className={`rounded border px-2 py-1 text-xs ${
-                  st.size.label === s.label
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                    : 'border-slate-300 bg-white hover:bg-slate-50'
-                }`}
+                onClick={() => setSize(s)}
+                className={`rounded border px-2 py-1 text-sm text-left hover:bg-slate-50 ${isActive ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-700'}`}
               >
                 {s.label}
               </button>
-            ))}
-          </div>
-        </section>
+            );
+          })}
+        </div>
+      </section>
 
-        {/* Zoom */}
-        <section className="mb-4">
-          <div className="mb-2 text-xs font-medium text-slate-600">Zoom</div>
-          <div className="flex items-center gap-2">
-            <input
-              type="range"
-              min={0.1}
-              max={3}
-              step={0.02}
-              value={st.zoom}
-              onChange={(e) => st.setZoom(parseFloat(e.target.value))}
-              className="w-full"
-            />
-            <div className="w-10 text-right text-xs">{Math.round(st.zoom * 100)}%</div>
-          </div>
-        </section>
+      {/* ZOOM */}
+      <section>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Zoom</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xs w-9 text-right">{Math.round(zoom * 100)}%</span>
+          <input
+            type="range"
+            min={0.1}
+            max={3}
+            step={0.02}
+            value={zoom}
+            onChange={(e) => setZoom(parseFloat(e.target.value))}
+            className="w-full"
+          />
+        </div>
+      </section>
 
-        {/* Affichage */}
-        <section className="mb-4">
-          <div className="mb-2 text-xs font-medium text-slate-600">Affichage</div>
-          <div className="space-y-1 text-sm">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={st.showGrid} onChange={st.toggleGrid} />
-              Grille
-            </label>
-            <div className="flex items-center gap-2 pl-6">
-              <span className="text-xs text-slate-500">Pas :</span>
-              <input
-                type="number"
-                className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
-                value={st.gridSize}
-                onChange={(e) => st.setGridSize(parseInt(e.target.value || '40', 10))}
-                min={8}
-                max={200}
-              />
-            </div>
-            <label className="mt-2 flex items-center gap-2">
-              <input type="checkbox" checked={st.showGuides} onChange={st.toggleGuides} />
-              Guides / Bleed / Safe
-            </label>
-            <label className="mt-2 flex items-center gap-2">
-              <input type="checkbox" checked={st.snap} onChange={st.toggleSnap} />
-              Snap grille
-            </label>
-            <label className="mt-2 flex items-center gap-2">
-              <input type="checkbox" checked={st.magnet} onChange={st.toggleMagnet} />
-              Aimantation (photos)
-            </label>
-            <div className="flex items-center gap-2 pl-6">
-              <span className="text-xs text-slate-500">Tol. :</span>
-              <input
-                type="range"
-                min={1}
-                max={40}
-                value={st.magnetTol}
-                onChange={(e) => st.setMagnetTol(parseInt(e.target.value, 10))}
-              />
-              <span className="w-8 text-right text-xs">{st.magnetTol}px</span>
-            </div>
-          </div>
-        </section>
+      {/* GUIDES */}
+      <section className="grid grid-cols-2 gap-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={showGrid} onChange={toggleGrid} />
+          Grille
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={showGuides} onChange={toggleGuides} />
+          Repères
+        </label>
+        <label className="col-span-2 flex items-center gap-2">
+          <span className="text-xs text-slate-500 w-20">Pas grille</span>
+          <input
+            type="range"
+            min={8}
+            max={200}
+            step={1}
+            value={gridSize}
+            onChange={(e)=> setGridSize(parseInt(e.target.value, 10))}
+            className="w-full"
+          />
+          <span className="text-xs w-10 text-right">{gridSize}</span>
+        </label>
+        <label className="col-span-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={snap} onChange={toggleSnap} />
+          Snap à la grille
+        </label>
+      </section>
 
-        {/* Marges */}
-        <section className="mb-4">
-          <div className="mb-2 text-xs font-medium text-slate-600">Marges (mm)</div>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="text-xs">
-              <div className="mb-1 text-slate-500">Bleed</div>
-              <input
-                type="number"
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
-                value={st.bleedMm}
-                min={0}
-                onChange={(e) => st.setBleedMm(parseFloat(e.target.value || '0'))}
-              />
-            </label>
-            <label className="text-xs">
-              <div className="mb-1 text-slate-500">Safe</div>
-              <input
-                type="number"
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
-                value={st.safeMm}
-                min={0}
-                onChange={(e) => st.setSafeMm(parseFloat(e.target.value || '0'))}
-              />
-            </label>
-          </div>
-        </section>
+      {/* LAYOUT */}
+      <section>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Auto-layout</h3>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={()=>autoLayout(1)} className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50">1 col</button>
+          <button onClick={()=>autoLayout(2)} className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50">2 col</button>
+          <button onClick={()=>autoLayout(3)} className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50">3 col</button>
+          <button onClick={()=>autoLayout(4)} className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50">4 col</button>
+          <button onClick={autoLayoutAuto} className="col-span-2 rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50">Auto</button>
+          <button onClick={autoLayoutMosaic} className="col-span-2 rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50">Mosaïque équilibrée</button>
+          <button onClick={()=>autoFill(3)} className="col-span-2 rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50">Auto-remplir (≈3)</button>
+        </div>
+      </section>
 
-        {/* Fond */}
-        <section className="mb-4">
-          <div className="mb-2 text-xs font-medium text-slate-600">Arrière-plan</div>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <button
-              onClick={() => st.setBackground({ type: 'solid', color1: '#ffffff' })}
-              className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
-            >
-              Blanc
-            </button>
-            <button
-              onClick={() => st.setBackground({ type: 'solid', color1: '#000000' })}
-              className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
-            >
-              Noir
-            </button>
-            <button
-              onClick={() =>
-                st.setBackground({
-                  type: 'linear',
-                  color1: '#ffffff',
-                  color2: '#f1f5f9',
-                  angleDeg: 90,
-                })
-              }
-              className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
-            >
-              Dégradé
-            </button>
-          </div>
-        </section>
+      {/* PAGES */}
+      <section className="flex-1 min-h-0">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Pages</h3>
+        <div className="h-48 overflow-auto rounded border border-slate-200">
+          {pages.map((p, i) => {
+            const active = i === currentIndex;
+            return (
+              <button
+                key={p.id}
+                onClick={() => goTo(i)}
+                className={`block w-full text-left px-3 py-2 border-b last:border-b-0 ${active ? 'bg-indigo-50 text-indigo-800' : 'hover:bg-slate-50 text-slate-700'}`}
+              >
+                Page {i + 1}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
-        {/* Auto-layout */}
-        <section className="mb-4">
-          <div className="mb-2 text-xs font-medium text-slate-600">Auto-layout</div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => st.autoLayoutAuto()}
-              className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
-            >
-              Auto
-            </button>
-            <button
-              onClick={() => st.autoLayout(2)}
-              className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
-            >
-              2 colonnes
-            </button>
-            <button
-              onClick={() => st.autoLayout(3)}
-              className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
-            >
-              3 colonnes
-            </button>
-            <button
-              onClick={() => st.autoLayout(4)}
-              className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
-            >
-              4 colonnes
-            </button>
-            <button
-              onClick={() => st.autoLayoutMosaic()}
-              className="col-span-2 rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
-            >
-              Mosaïque équilibrée
-            </button>
-          </div>
-        </section>
+      {/* ÉLÉMENT SÉLECTIONNÉ */}
+      <section>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Élément sélectionné</h3>
 
-        {/* Outils */}
-        <section className="mb-4">
-          <div className="mb-2 text-xs font-medium text-slate-600">Outils</div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => st.addText(40, 40, 'Votre titre')}
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              + Texte
-            </button>
-            <button
-              onClick={() => {
-                const pg = st.pages[st.currentIndex];
-                st.clearPage(pg.id);
-              }}
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              Vider la page
-            </button>
-            <button
-              onClick={handleExportPDF}
-              className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
-            >
-              Export PDF
-            </button>
-          </div>
-        </section>
+        {!selItem && (
+          <p className="text-xs text-slate-500">Sélectionnez une photo ou un texte pour voir ses options.</p>
+        )}
 
-        {/* Pages */}
-        <section className="mb-2">
-          <div className="mb-2 text-xs font-medium text-slate-600">Pages</div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => st.addPage()}
-              className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
-            >
-              + Page
-            </button>
-            <button
-              onClick={() => st.removePage(st.currentIndex)}
-              className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50"
-            >
-              ‒ Supprimer
-            </button>
-            <div className="text-xs text-slate-500">
-              {st.currentIndex + 1} / {st.pages.length}
-            </div>
-          </div>
+        {/* PHOTO BRANCH */}
+        {selItem && selItem.kind === 'photo' && (
+          <PhotoControls item={selItem as PhotoItem} pageId={page.id} />
+        )}
 
-          <div className="mt-2 flex gap-2 overflow-x-auto pb-2">
-            {st.pages.map((p, i) => {
-              const W = st.cmToPx(st.size.w * 2);
-              const H = st.cmToPx(st.size.h);
-              const r = 180 / W; // largeur vignette ~180px
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => st.goTo(i)}
-                  className={`shrink-0 rounded border ${
-                    i === st.currentIndex ? 'border-indigo-500' : 'border-slate-300'
-                  }`}
-                  title={`Page ${i + 1}`}
-                >
-                  <div
-                    className="relative bg-white"
-                    style={{ width: Math.round(W * r), height: Math.round(H * r) }}
-                  >
-                    {/* mini repère pli */}
-                    <div
-                      className="absolute top-0 h-full border-l border-slate-300"
-                      style={{ left: Math.round((W / 2) * r) }}
-                    />
-                    {/* points pour items */}
-                    {p.items
-                      .filter((it: any) => it.kind === 'photo')
-                      .slice(0, 12)
-                      .map((it: any) => (
-                        <div
-                          key={it.id}
-                          className="absolute rounded-sm bg-slate-300/70"
-                          style={{
-                            left: Math.round(it.x * r),
-                            top: Math.round(it.y * r),
-                            width: Math.round(it.width * r),
-                            height: Math.round(it.height * r),
-                          }}
-                        />
-                      ))}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      </div>
+        {/* TEXT BRANCH */}
+        {selItem && selItem.kind === 'text' && (
+          <TextControls item={selItem as TextItem} pageId={page.id} />
+        )}
+      </section>
     </aside>
+  );
+}
+
+/* ---------------- Photo controls (narrowed) ---------------- */
+function PhotoControls({ item, pageId }: { item: PhotoItem; pageId: string }) {
+  const st = useAlbumStore();
+  return (
+    <div className="space-y-2">
+      {/* Opacité */}
+      <label className="flex items-center gap-2">
+        <span className="w-20 text-xs text-slate-500">Opacité</span>
+        <input
+          type="range" min={0.1} max={1} step={0.05}
+          value={item.opacity ?? 1}
+          onChange={(e)=>st.updateItem(pageId, item.id, { opacity: parseFloat(e.target.value) })}
+          className="w-full"
+        />
+        <span className="w-10 text-right text-xs">{Math.round((item.opacity ?? 1)*100)}%</span>
+      </label>
+
+      {/* Bordure */}
+      <label className="flex items-center gap-2">
+        <span className="w-20 text-xs text-slate-500">Bordure</span>
+        <input
+          type="range" min={0} max={20} step={1}
+          value={item.borderW ?? 0}
+          onChange={(e)=>st.updateItem(pageId, item.id, { borderW: parseInt(e.target.value,10) })}
+          className="w-full"
+        />
+        <input
+          type="color"
+          value={item.borderColor ?? '#111827'}
+          onChange={(e)=>st.updateItem(pageId, item.id, { borderColor: e.target.value })}
+          className="h-6 w-10"
+          aria-label="Couleur bordure"
+        />
+      </label>
+
+      {/* Coins arrondis */}
+      <label className="flex items-center gap-2">
+        <span className="w-20 text-xs text-slate-500">Coins</span>
+        <input
+          type="range" min={0} max={80} step={1}
+          value={item.cornerR ?? 0}
+          onChange={(e)=>st.updateItem(pageId, item.id, { cornerR: parseInt(e.target.value,10) })}
+          className="w-full"
+        />
+        <span className="w-10 text-right text-xs">{item.cornerR ?? 0}</span>
+      </label>
+
+      {/* Fondus */}
+      <div className="mt-2 rounded border border-slate-200 p-2">
+        <p className="text-xs font-medium text-slate-600 mb-1">Fondus</p>
+
+        <label className="flex items-center gap-2">
+          <span className="w-20 text-xs text-slate-500">Haut</span>
+          <input
+            type="range" min={0} max={200} step={1}
+            value={item.fadeTop ?? 0}
+            onChange={(e)=>st.updateItem(pageId, item.id, { fadeTop: parseInt(e.target.value,10) })}
+            className="w-full"
+          />
+          <span className="w-10 text-right text-xs">{item.fadeTop ?? 0}</span>
+        </label>
+
+        <label className="flex items-center gap-2">
+          <span className="w-20 text-xs text-slate-500">Bas</span>
+          <input
+            type="range" min={0} max={200} step={1}
+            value={item.fadeBottom ?? 0}
+            onChange={(e)=>st.updateItem(pageId, item.id, { fadeBottom: parseInt(e.target.value,10) })}
+            className="w-full"
+          />
+          <span className="w-10 text-right text-xs">{item.fadeBottom ?? 0}</span>
+        </label>
+
+        <label className="flex items-center gap-2">
+          <span className="w-20 text-xs text-slate-500">Gauche</span>
+          <input
+            type="range" min={0} max={200} step={1}
+            value={item.fadeLeft ?? 0}
+            onChange={(e)=>st.updateItem(pageId, item.id, { fadeLeft: parseInt(e.target.value,10) })}
+            className="w-full"
+          />
+          <span className="w-10 text-right text-xs">{item.fadeLeft ?? 0}</span>
+        </label>
+
+        <label className="flex items-center gap-2">
+          <span className="w-20 text-xs text-slate-500">Droit</span>
+          <input
+            type="range" min={0} max={200} step={1}
+            value={item.fadeRight ?? 0}
+            onChange={(e)=>st.updateItem(pageId, item.id, { fadeRight: parseInt(e.target.value,10) })}
+            className="w-full"
+          />
+          <span className="w-10 text-right text-xs">{item.fadeRight ?? 0}</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Text controls (narrowed) ---------------- */
+function TextControls({ item, pageId }: { item: TextItem; pageId: string }) {
+  const st = useAlbumStore();
+  return (
+    <div className="space-y-2">
+      <label className="flex items-center gap-2">
+        <span className="w-20 text-xs text-slate-500">Texte</span>
+        <input
+          className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          value={item.text ?? ''}
+          onChange={(e)=>st.updateItem(pageId, item.id, { text: e.target.value })}
+        />
+      </label>
+
+      <label className="flex items-center gap-2">
+        <span className="w-20 text-xs text-slate-500">Taille</span>
+        <input
+          type="range" min={8} max={160} step={1}
+          value={item.fontSize ?? 32}
+          onChange={(e)=>st.updateItem(pageId, item.id, { fontSize: parseInt(e.target.value,10) })}
+          className="w-full"
+        />
+        <span className="w-10 text-right text-xs">{item.fontSize ?? 32}</span>
+      </label>
+
+      <label className="flex items-center gap-2">
+        <span className="w-20 text-xs text-slate-500">Police</span>
+        <input
+          className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          value={item.fontFamily ?? 'Inter, system-ui, sans-serif'}
+          onChange={(e)=>st.updateItem(pageId, item.id, { fontFamily: e.target.value })}
+        />
+      </label>
+
+      <div className="flex items-center gap-2">
+        <span className="w-20 text-xs text-slate-500">Align</span>
+        <select
+          className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          value={item.align ?? 'left'}
+          onChange={(e)=>st.updateItem(pageId, item.id, { align: e.target.value as any })}
+        >
+          <option value="left">Gauche</option>
+          <option value="center">Centre</option>
+          <option value="right">Droite</option>
+        </select>
+      </div>
+
+      <label className="flex items-center gap-2">
+        <span className="w-20 text-xs text-slate-500">Couleur</span>
+        <input
+          type="color"
+          value={item.color ?? '#000000'}
+          onChange={(e)=>st.updateItem(pageId, item.id, { color: e.target.value })}
+          className="h-6 w-10"
+          aria-label="Couleur du texte"
+        />
+      </label>
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">Graisse</span>
+          <select
+            className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+            value={item.fontWeight ?? 400}
+            onChange={(e)=>st.updateItem(pageId, item.id, { fontWeight: parseInt(e.target.value,10) })}
+          >
+            <option value={300}>Light</option>
+            <option value={400}>Regular</option>
+            <option value={500}>Medium</option>
+            <option value={600}>Semibold</option>
+            <option value={700}>Bold</option>
+          </select>
+        </label>
+
+        <label className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">Esp. lettres</span>
+          <input
+            type="number" step={0.1}
+            className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+            value={item.letterSpacing ?? 0}
+            onChange={(e)=>st.updateItem(pageId, item.id, { letterSpacing: parseFloat(e.target.value) })}
+          />
+        </label>
+      </div>
+
+      <label className="flex items-center gap-2">
+        <span className="w-20 text-xs text-slate-500">Interligne</span>
+        <input
+          type="number" step={0.05}
+          className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          value={item.lineHeight ?? 1.2}
+          onChange={(e)=>st.updateItem(pageId, item.id, { lineHeight: parseFloat(e.target.value) })}
+        />
+      </label>
+    </div>
   );
 }
