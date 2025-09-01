@@ -1,40 +1,28 @@
-// util serveur Supabase pour App Router (Next 15+)
-// - cookies() peut être async en route handlers => on l'await
-// - expose une fonction async supabaseServer()
-
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { cookies } from "next/headers";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 export async function supabaseServer() {
-  const cookieStore = await cookies(); // ✅ Next 15: Promise<ReadonlyRequestCookies>
+  const store = await cookies(); // Next 15
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          // lit sb-access-token / sb-refresh-token
+          return store.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          // permet à @supabase/ssr de rafraîchir la session si besoin
+          store.set(name, value, options);
+        },
+        remove(name: string, options: CookieOptions) {
+          store.set(name, "", { ...options, maxAge: 0 });
+        },
+      },
+    }
+  );
 
-  if (!url || !/^https?:\/\//.test(url)) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_URL invalide ou manquante');
-  }
-  if (!anon) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY manquante');
-  }
-
-  return createServerClient(url, anon, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options: CookieOptions) {
-        try {
-          cookieStore.set({ name, value, ...options });
-        } catch {}
-      },
-      remove(name: string, options: CookieOptions) {
-        try {
-          cookieStore.set({ name, value: '', ...options, maxAge: 0 });
-        } catch {}
-      },
-    },
-  });
+  return supabase;
 }
-
-export type SupabaseServerClient = Awaited<ReturnType<typeof supabaseServer>>;

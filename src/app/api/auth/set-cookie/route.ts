@@ -10,35 +10,59 @@ export async function POST(req: Request) {
   }
 
   const isProd = process.env.NODE_ENV === "production";
-
-  // ⚠️ IMPORTANT : mets ici ton domaine canonique si tu utilises www.
-  // Si ton site tourne sur www.raventech.fr, on met ".raventech.fr"
-  // (valable pour l’apex ET le sous-domaine www).
-  const cookieDomain = isProd ? ".raventech.fr" : undefined;
+  const domain = isProd ? ".raventech.fr" : undefined;
 
   const base = {
     httpOnly: true as const,
-    sameSite: "none" as const, // nécessaire pour que le cookie soit envoyé après redirections
+    sameSite: "none" as const,
     path: "/",
-    secure: isProd,            // requis en HTTPS prod
-    domain: cookieDomain,      // couvre raventech.fr et www.raventech.fr
+    secure: isProd,
   };
 
   const res = NextResponse.json({ ok: true });
 
-  // Access token (durée courte)
+  // 🔴 Nettoyage des cookies "host-only" (www.raventech.fr) s'ils existent
+  res.cookies.set({
+    name: "sb-access-token",
+    value: "",
+    ...base,
+    domain: "www.raventech.fr",
+    maxAge: 0,
+  });
+  res.cookies.set({
+    name: "sb-refresh-token",
+    value: "",
+    ...base,
+    domain: "www.raventech.fr",
+    maxAge: 0,
+  });
+  // 🔴 Nettoyage des cookies sans domain explicite (au cas où)
+  res.cookies.set({
+    name: "sb-access-token",
+    value: "",
+    ...base,
+    maxAge: 0,
+  });
+  res.cookies.set({
+    name: "sb-refresh-token",
+    value: "",
+    ...base,
+    maxAge: 0,
+  });
+
+  // ✅ Pose des cookies uniques sur le domaine canonique
   res.cookies.set({
     name: "sb-access-token",
     value: access_token,
     ...base,
+    domain,
     maxAge: 60 * 60 * 24 * 7, // 7 jours
   });
-
-  // Refresh token (durée plus longue)
   res.cookies.set({
     name: "sb-refresh-token",
     value: refresh_token,
     ...base,
+    domain,
     maxAge: 60 * 60 * 24 * 30, // 30 jours
   });
 
