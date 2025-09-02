@@ -24,3 +24,39 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+/* Lisibilité : palette par défaut plus sombre */
+:root {
+  color-scheme: light;
+}
+
+/* Texte par défaut bien contrasté */
+html, body {
+  color: #0f172a; /* slate-900 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Boutons, labels, paragraphes : teinte lisible */
+button, label, p, span, input, select {
+  color: #1f2937; /* slate-800 */
+}
+
+/* Neutraliser un style global qui aurait mis de l'opacité partout */
+[data-dim="true"] {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+/* Évite tout “opacity: .5” hérité des wrappers */
+.opacity-50,
+.opacity-60 {
+  opacity: 1 !important;
+}
+html, body, #__next, #root {
+  height: 100%;
+}
+
+* {
+  min-width: 0;
+  min-height: 0;
+}

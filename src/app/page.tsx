@@ -1,6 +1,8 @@
-// app/page.tsx
-import { redirect } from 'next/navigation';
+'use client';
 
-export default function Home() {
-  redirect('/sign-in');
+import React from 'react';
+import EditorLayout from '@/components/EditorLayout';
+
+export default function Page() {
+  return <EditorLayout />;
 }

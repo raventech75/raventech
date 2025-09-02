@@ -1,184 +1,160 @@
 'use client';
 
-import { useState } from 'react';
+import React from 'react';
 import { useAlbumStore } from '@/store/useAlbumStore';
 
-type Props = {
-  /** Adapter la vue du canvas à l’écran (fourni par la page editor). */
-  onFit?: () => void;
-};
+/* --- Atomes UI : pill + 3D --- */
 
-/** Déclare les helpers exposés par EditorCanvas pour éviter les erreurs TS. */
-declare global {
-  interface Window {
-    ravenCaptureOne?: () => Promise<{ dataUrl: string; pagePx: { w: number; h: number } }>;
-    ravenCaptureAll?: () => Promise<Array<{ dataUrl: string; pagePx: { w: number; h: number } }>>;
-  }
+function PillBtn({
+  onClick,
+  title,
+  children,
+  active = false,
+  disabled = false,
+}: {
+  onClick?: () => void;
+  title?: string;
+  children: React.ReactNode;
+  active?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        'h-8 px-3 rounded-full text-xs font-medium inline-flex items-center gap-1',
+        'outline-none transition active:translate-y-[1px]',
+        'focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-sky-500',
+        disabled
+          ? 'opacity-40 cursor-not-allowed'
+          : active
+          ? 'bg-gradient-to-b from-sky-400 to-sky-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,.35),0_6px_12px_rgba(2,132,199,.35)]'
+          : 'bg-gradient-to-b from-white to-slate-100 text-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,.8),0_2px_6px_rgba(0,0,0,.08)] hover:from-white hover:to-white',
+        'border border-slate-300',
+      ].join(' ')}
+    >
+      {children}
+    </button>
+  );
 }
 
-export default function Toolbar({ onFit }: Props) {
+function PillGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="inline-flex items-center gap-1 p-1 rounded-full border border-slate-200 bg-white/80 shadow-[0_2px_8px_rgba(0,0,0,.06),inset_0_1px_0_rgba(255,255,255,.7)]">
+      {children}
+    </div>
+  );
+}
+
+function Chip({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="h-8 px-2 rounded-full border border-slate-200 bg-white/90 text-xs text-slate-700 grid place-items-center shadow-[inset_0_1px_0_rgba(255,255,255,.8),0_1px_3px_rgba(0,0,0,.05)]">
+      {children}
+    </div>
+  );
+}
+
+/* --- Toolbar --- */
+
+export default function Toolbar() {
   const st = useAlbumStore();
-  const [busy, setBusy] = useState<false | 'one' | 'all'>(false);
 
-  function doFit() {
-    if (onFit) return onFit();
-    // Fallback: laisse l’EditorCanvas s’ajuster via un event global
-    window.dispatchEvent(new Event('raventech-fit'));
-  }
+  const zoomPct = Math.round(st.zoom * 100);
+  const onFit = () => window.dispatchEvent(new CustomEvent('album:zoom-fit'));
+  const zoomIn = () => st.setZoom(Math.min(6, st.zoom * 1.1));
+  const zoomOut = () => st.setZoom(Math.max(0.05, st.zoom / 1.1));
+  const resetPan = () => st.resetPan();
 
-  function preview() {
-    window.dispatchEvent(new Event('raventech-preview'));
-  }
-
-  function logout() {
-    // supprime les cookies côté serveur puis redirige
-    window.location.href = '/api/auth/clear-cookie';
-  }
-
-  async function exportOne() {
-    try {
-      setBusy('one');
-
-      const cap = await window.ravenCaptureOne?.();
-      if (!cap?.dataUrl) throw new Error('Capture page échouée');
-
-      const payload = {
-        images: [cap.dataUrl],
-        pagePx: cap.pagePx,
-        dpi: st.dpi,
-        // cropMarks supprimé car non présent dans le store
-      };
-
-      const res = await fetch('/api/export-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Export PDF (page) : réponse invalide');
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'raventech-page.pdf';
-      a.click();
-      URL.revokeObjectURL(url);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function exportAll() {
-    try {
-      setBusy('all');
-
-      const caps = await window.ravenCaptureAll?.();
-      if (!caps?.length) throw new Error('Aucune capture disponible');
-
-      const payload = {
-        images: caps.map((c) => c.dataUrl),
-        pagePx: caps[0].pagePx,
-        dpi: st.dpi,
-        // cropMarks supprimé car non présent dans le store
-      };
-
-      const res = await fetch('/api/export-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Export PDF (album) : réponse invalide');
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'raventech-album.pdf';
-      a.click();
-      URL.revokeObjectURL(url);
-    } finally {
-      setBusy(false);
-    }
-  }
+  // Raccourcis clavier
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target && (e.target as HTMLElement).tagName.match(/INPUT|TEXTAREA|SELECT/)) return;
+      if (e.key.toLowerCase() === 'f') onFit();
+      if (e.key.toLowerCase() === 'c') resetPan();
+      if (e.key.toLowerCase() === 'p') st.openPreview();
+      if ((e.ctrlKey || e.metaKey) && e.key === '=' ) zoomIn();
+      if ((e.ctrlKey || e.metaKey) && e.key === '-' ) zoomOut();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [st.zoom]);
 
   return (
-    <div className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-3 backdrop-blur">
-      {/* Bloc gauche : outils & repères */}
-      <div className="flex items-center gap-3 text-sm">
-        <button
-          type="button"
-          onClick={doFit}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50"
-          title="Adapter la page à l’écran"
-        >
-          Adapter à l’écran
-        </button>
+    <div className="sticky top-0 z-40 border-b border-slate-200">
+      <div className="mx-auto max-w-7xl px-2 py-1 flex items-center gap-3 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70">
+        {/* Fichier */}
+        <PillGroup>
+          <PillBtn onClick={st.openPreview} title="Aperçu (P)">
+            <span aria-hidden>👁️</span><span className="hidden sm:inline">Aperçu</span>
+          </PillBtn>
+          <PillBtn onClick={() => st.exportJpeg({ all: false })} title="Exporter la page (JPEG 300 dpi)">
+            <span aria-hidden>🖼️</span><span className="hidden sm:inline">Page</span>
+          </PillBtn>
+          <PillBtn onClick={() => st.exportJpeg({ all: true })} title="Exporter l’album (JPEG 300 dpi)">
+            <span aria-hidden>📚</span><span className="hidden sm:inline">Album</span>
+          </PillBtn>
+        </PillGroup>
 
-        <button
-          type="button"
-          onClick={preview}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 hover:bg-slate-50"
-          title="Aperçu rapide"
-        >
-          Aperçu
-        </button>
-        // Ouvrir l’aperçu de la page en cours
-        (window as any).ravenOpenPreviewCurrent?.();
+        {/* Zoom & Pan */}
+        <PillGroup>
+          <PillBtn onClick={zoomOut} title="Zoom - (Ctrl/⌘ + -)">−</PillBtn>
+          <Chip>{zoomPct}%</Chip>
+          <PillBtn onClick={zoomIn} title="Zoom + (Ctrl/⌘ + =)">+</PillBtn>
+          <PillBtn onClick={onFit} title="Adapter à l’écran (F)">
+            <span aria-hidden>🪄</span><span className="hidden sm:inline">Fit</span>
+          </PillBtn>
+          <PillBtn onClick={resetPan} title="Recentrer (C)">
+            <span aria-hidden>🎯</span><span className="hidden sm:inline">Centre</span>
+          </PillBtn>
+        </PillGroup>
 
-        // Ouvrir l’aperçu de TOUTES les pages (navigation ← → + miniatures)
-        (window as any).ravenOpenPreviewAll?.();
-        
-        <div className="h-5 w-px bg-slate-300" />
+        {/* Affichage */}
+        <PillGroup>
+          <PillBtn
+            active={st.snapEnabled}
+            onClick={st.toggleSnap}
+            title="Aimantation (Snapping)"
+          >
+            <span aria-hidden>🧲</span><span className="hidden sm:inline">Snap</span>
+          </PillBtn>
+          <PillBtn
+            active={st.showGuides}
+            onClick={st.toggleGuides}
+            title="Afficher les guides (marges + MILIEU)"
+          >
+            <span aria-hidden>🧭</span><span className="hidden sm:inline">Guides</span>
+          </PillBtn>
+          <PillBtn
+            active={st.showRulers}
+            onClick={st.toggleRulers}
+            title="Afficher les règles (cm)"
+          >
+            <span aria-hidden>📏</span><span className="hidden sm:inline">Règles</span>
+          </PillBtn>
 
-        <label className="inline-flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={st.showGuides}
-            onChange={() => st.toggleGuides()}
-          />
-          <span>Repères</span>
-        </label>
+          <div className="hidden md:inline-flex items-center gap-2 pl-1">
+            <label className="text-xs text-slate-600">Snap</label>
+            <input
+              type="number"
+              min={1}
+              max={40}
+              value={st.snapDistancePx}
+              onChange={(e) => st.setSnapDistancePx(parseInt(e.target.value || '10', 10))}
+              className="h-8 w-16 px-2 rounded-full border border-slate-300 bg-white/90 text-xs text-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,.8),0_1px_2px_rgba(0,0,0,.06)]"
+              title="Distance d’aimantation (px écran)"
+            />
+            <span className="text-xs text-slate-600">px</span>
+          </div>
+        </PillGroup>
 
-        <label className="inline-flex items-center gap-2">
-          <span>Bleed</span>
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={st.bleedMm}
-            onChange={(e) => st.setBleedMm(parseInt(e.target.value || '0', 10))}
-            className="w-16 rounded border border-slate-300 px-2 py-1"
-          />
-          <span>mm</span>
-        </label>
-      </div>
-
-      {/* Bloc droit : export + logout */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={exportOne}
-          disabled={!!busy}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
-        >
-          {busy === 'one' ? 'Export…' : 'Exporter la page'}
-        </button>
-        <button
-          onClick={exportAll}
-          disabled={!!busy}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
-        >
-          {busy === 'all' ? 'Export…' : 'Exporter tout'}
-        </button>
-
-        <div className="h-5 w-px bg-slate-300" />
-
-        <button
-          onClick={logout}
-          className="rounded-md border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100"
-          title="Se déconnecter"
-        >
-          Déconnexion
-        </button>
+        {/* Infos compactes */}
+        <div className="ml-auto inline-flex items-center gap-2">
+          <Chip>{st.pages.length}p</Chip>
+          <Chip>{st.size.w}×{st.size.h} cm • {st.dpi} dpi</Chip>
+        </div>
       </div>
     </div>
   );
