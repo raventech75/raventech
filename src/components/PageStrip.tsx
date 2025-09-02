@@ -9,31 +9,31 @@ function MiniPage({ pageId }: { pageId: string }) {
   const page = st.pages.find((x) => x.id === pageId)!;
   const { size } = st;
 
-  // Fond comme dans l’aperçu (PreviewModal)
+  // Fond comme dans l'aperçu (PreviewModal)
   const bgCss: React.CSSProperties = (() => {
     const bg = page.background;
     let background = '#FFFFFF';
 
-    if (bg.kind === 'solid' && bg.solid) background = bg.solid.color;
-    else if (bg.kind === 'linear' && bg.linear)
-      background = `linear-gradient(${bg.linear.angle}deg, ${bg.linear.from}, ${bg.linear.to})`;
-    else if (bg.kind === 'radial' && bg.radial)
-      background = `radial-gradient(${bg.radial.shape}, ${bg.radial.inner}, ${bg.radial.outer})`;
+    if (bg.kind === 'solid' && (bg as any).solid) background = (bg as any).solid.color;
+    else if (bg.kind === 'linear' && (bg as any).linear)
+      background = `linear-gradient(${(bg as any).linear.angle}deg, ${(bg as any).linear.from}, ${(bg as any).linear.to})`;
+    else if (bg.kind === 'radial' && (bg as any).radial)
+      background = `radial-gradient(${(bg as any).radial.shape}, ${(bg as any).radial.inner}, ${(bg as any).radial.outer})`;
 
     const style: React.CSSProperties = { background, position: 'absolute', inset: 0 };
 
-    if (bg.kind === 'image' && bg.image && (bg.image.assetId || bg.image.url)) {
-      const url = bg.image.url ?? undefined;
+    if (bg.kind === 'image' && (bg as any).image && ((bg as any).image.assetId || (bg as any).image.url)) {
+      const url = (bg as any).image.url ?? undefined;
       if (url) {
-        const fit = bg.image.fit ?? 'cover';
+        const fit = (bg as any).image.fit ?? 'cover';
         (style as any).backgroundImage = `url(${url})`;
         (style as any).backgroundRepeat = 'no-repeat';
         (style as any).backgroundSize =
-          fit === 'cover' ? `${(bg.image.scale ?? 1) * 100}% auto, cover` : 'contain';
-        (style as any).backgroundPosition = `${50 + (bg.image.offsetX ?? 0)}% ${
-          50 + (bg.image.offsetY ?? 0)
+          fit === 'cover' ? `${((bg as any).image.scale ?? 1) * 100}% auto, cover` : 'contain';
+        (style as any).backgroundPosition = `${50 + ((bg as any).image.offsetX ?? 0)}% ${
+          50 + ((bg as any).image.offsetY ?? 0)
         }%`;
-        (style as any).opacity = bg.image.opacity ?? 1;
+        (style as any).opacity = (bg as any).image.opacity ?? 1;
       }
     }
 
@@ -53,11 +53,11 @@ function MiniPage({ pageId }: { pageId: string }) {
         const h = (it.h / size.h) * 100;
 
         const radius =
-          it.borderRadiusMode === 'circle'
+          (it as any).borderRadiusMode === 'circle'
             ? '50%'
-            : it.borderRadiusMode === 'squircle'
+            : (it as any).borderRadiusMode === 'squircle'
             ? '30% / 40%'
-            : `${Math.max(0, Math.min(50, it.borderRadiusPct ?? 0))}%`;
+            : `${Math.max(0, Math.min(50, (it as any).borderRadiusPct ?? 0))}%`;
 
         const feather = Math.max(0, Math.min(40, (it as any).featherPct ?? 0));
         const maskImage =
@@ -71,7 +71,7 @@ function MiniPage({ pageId }: { pageId: string }) {
           top: `${top}%`,
           width: `${w}%`,
           height: `${h}%`,
-          transform: `rotate(${it.rot ?? 0}deg)`,
+          transform: `rotate(${(it as any).rot ?? 0}deg)`,
           transformOrigin: 'center',
           overflow: 'hidden',
           borderRadius: radius,
@@ -80,8 +80,8 @@ function MiniPage({ pageId }: { pageId: string }) {
           maskImage: maskImage as any,
         };
 
-        if (it.kind === 'photo' && it.assetId) {
-          const asset = st.assets.find((a) => a.id === it.assetId);
+        if (it.kind === 'photo' && (it as any).assetId) {
+          const asset = st.assets.find((a) => a.id === (it as any).assetId);
           return (
             <div key={it.id} style={style}>
               {asset ? (
@@ -114,7 +114,7 @@ function MiniPage({ pageId }: { pageId: string }) {
               style={style}
               className="p-[4%] text-[10px] leading-snug text-slate-800"
             >
-              {it.text}
+              {(it as any).text}
             </div>
           );
         }
@@ -218,7 +218,7 @@ export default function PageStrip() {
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
       // réindex
-      next.forEach((p, i) => (p.index = i));
+      next.forEach((p, i) => ((p as any).index = i));
       return next;
     });
 
@@ -257,9 +257,9 @@ export default function PageStrip() {
               <PageThumb
                 key={p.id}
                 pageId={p.id}
-                index={p.index}
-                selected={cur === p.index}
-                onClick={() => st.setCurrentPage(p.index)}
+                index={(p as any).index}
+                selected={cur === (p as any).index}
+                onClick={() => st.setCurrentPage((p as any).index)}
                 onDragStart={onDragStart}
                 onDragEnter={onDragEnter}
                 onDragEnd={onDragEnd}
@@ -278,7 +278,7 @@ function ScrollButton({
   targetRef,
 }: {
   side: 'left' | 'right';
-  targetRef: React.RefObject<HTMLDivElement>;
+  targetRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const onClick = () => {
     const el = targetRef.current;

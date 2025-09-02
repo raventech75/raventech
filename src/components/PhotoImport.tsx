@@ -36,7 +36,6 @@ export default function PhotoImport() {
     const assets = (await Promise.all(tasks)).filter(Boolean) as Asset[];
 
     // Compat : selon ton store tu peux avoir addAssets OU juste addAsset
-    // @ts-expect-error – on supporte les deux signatures
     if (typeof st.addAssets === 'function') st.addAssets(assets);
     else assets.forEach((a) => st.addAsset(a));
   }

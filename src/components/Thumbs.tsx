@@ -5,7 +5,10 @@ import React from 'react';
 import { useAlbumStore } from '@/store/useAlbumStore';
 
 export default function Thumbs() {
-  const { pages, currentIndex, goTo, size } = useAlbumStore();
+  const st = useAlbumStore();
+  const pages = st.pages;
+  const currentPageIndex = st.currentPageIndex;
+  const size = st.size;
 
   // petit helper pour calculer une vignette proportionnelle
   const thumbW = 120; // largeur fixe des vignettes
@@ -17,12 +20,12 @@ export default function Thumbs() {
       {pages.map((pg, i) => {
         const photoCount = pg.items.filter((it: any) => it.kind === 'photo').length;
         const textCount = pg.items.filter((it: any) => it.kind === 'text').length;
-        const isActive = i === currentIndex;
+        const isActive = i === currentPageIndex;
 
         return (
           <button
             key={pg.id}
-            onClick={() => goTo(i)}
+            onClick={() => st.setCurrentPage(i)}
             className={[
               'shrink-0 rounded-lg border shadow-sm hover:shadow transition',
               isActive ? 'border-indigo-500 ring-2 ring-indigo-300' : 'border-slate-200',

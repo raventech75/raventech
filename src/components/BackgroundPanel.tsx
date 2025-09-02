@@ -71,20 +71,11 @@ export default function BackgroundPanel() {
           </Row>
           <Row label="Angle">
             <input
-  type="number"
-  value={bg.linear?.angle ?? 90}
-  onChange={(e) => {
-    const angle = parseInt(e.target.value || '0', 10);
-    setBg({
-      linear: {
-        from: bg.linear?.from ?? '#FFFFFF',
-        to: bg.linear?.to ?? '#F8FAFC',
-        angle,
-      },
-    });
-  }}
-  className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-/>
+              type="number"
+              value={bg.linear?.angle ?? 90}
+              onChange={(e) => setBg({ linear: { from: '#FFFFFF', to: '#F8FAFC', ...(bg.linear ?? {}), angle: parseInt(e.target.value || '0', 10) } })}
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            />
           </Row>
         </div>
       )}
@@ -111,7 +102,7 @@ export default function BackgroundPanel() {
           <Row label="Forme">
             <select
               value={bg.radial?.shape ?? 'ellipse'}
-              onChange={(e) => setBg({ radial: { ...(bg.radial ?? {}), shape: e.target.value as any } })}
+              onChange={(e) => setBg({ radial: { inner: '#FFFFFF', outer: '#F1F5F9', ...(bg.radial ?? {}), shape: e.target.value as any } })}
               className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
             >
               <option value="ellipse">Ellipse</option>
@@ -202,18 +193,11 @@ export default function BackgroundPanel() {
           </Row>
           <Row label="Couleur">
             <input
-  type="color"
-  value={bg.linear?.from ?? '#FFFFFF'}
-  onChange={(e) =>
-    setBg({
-      linear: {
-        from: e.target.value,
-        to: bg.linear?.to ?? '#F8FAFC',
-        angle: bg.linear?.angle ?? 90,
-      },
-    })
-  }
-/>
+              type="color"
+              value={bg.text?.color ?? '#000000'}
+              onChange={(e) => setTxt({ color: e.target.value })}
+              className="h-9 w-full rounded-md border border-slate-300"
+            />
           </Row>
           <Row label="% largeur">
             <input

@@ -38,13 +38,13 @@ export default function SelectionToolbar() {
 
   // Position flottante
   const pxPerCm = (96 / 2.54) * st.zoom;
-  const leftPx = item.x * pxPerCm;
-  const topPx  = item.y * pxPerCm;
-  const wPx    = item.w * pxPerCm;
+  const leftPx = (item as any).x * pxPerCm;
+  const topPx  = (item as any).y * pxPerCm;
+  const wPx    = (item as any).w * pxPerCm;
   const bubbleW = Math.min(420, Math.max(280, wPx));
   const bubbleX = Math.max(8, Math.min(leftPx + wPx / 2 - bubbleW / 2, st.size.w * pxPerCm - bubbleW - 8));
   const bubbleYAbove = topPx - 46;
-  const bubbleYBelow = topPx + item.h * pxPerCm + 8;
+  const bubbleYBelow = topPx + (item as any).h * pxPerCm + 8;
   const bubbleY = bubbleYAbove < 4 ? bubbleYBelow : bubbleYAbove;
 
   // États & mutateurs
@@ -60,10 +60,10 @@ export default function SelectionToolbar() {
   const cropActive = !!(item as any).cropActive;
 
   // Rotation
-  const rot = item.rot ?? 0;
+  const rot = (item as any).rot ?? 0;
   const setRot = (deg: number) => st.updateSelected({ rot: ((deg % 360) + 360) % 360 });
 
-  // Verrou ratio (persiste sur l’item, utilisé par EditorCanvas)
+  // Verrou ratio (persiste sur l'item, utilisé par EditorCanvas)
   const lockAspect = !!(item as any).lockAspect;
   const toggleLock = () => st.updateSelected({ lockAspect: !lockAspect } as any);
 
@@ -71,7 +71,7 @@ export default function SelectionToolbar() {
   function applyAspect(ratio: number | null) {
     if (!ratio) return; // libre
     const size = st.size;
-    const { x, y, w, h } = item;
+    const { x, y, w, h } = item as any;
     const cx = x + w / 2;
     const cy = y + h / 2;
 
@@ -87,7 +87,7 @@ export default function SelectionToolbar() {
     st.updateSelected({ x: nx, y: ny, w: newW, h: newH });
   }
 
-  // Presets recadrage (déplace l’image à l’intérieur du cadre)
+  // Presets recadrage (déplace l'image à l'intérieur du cadre)
   const setOffset = (xPct: number, yPct: number) =>
     st.updateSelected({ offsetXpct: xPct, offsetYpct: yPct } as any);
 
@@ -107,10 +107,10 @@ export default function SelectionToolbar() {
       <Bubble style={{ position: 'absolute', left: bubbleX, top: bubbleY, width: bubbleW }}>
         {/* Plan */}
         <div className="flex items-center gap-1">
-          <RBtn title="Tout devant" onClick={(e) => { e.stopPropagation(); st.bringToFront(pageIndex, item.id); }}>⤒</RBtn>
-          <RBtn title="Monter d’un plan" onClick={(e) => { e.stopPropagation(); st.bringForward(pageIndex, item.id); }}>＋</RBtn>
-          <RBtn title="Descendre d’un plan" onClick={(e) => { e.stopPropagation(); st.sendBackward(pageIndex, item.id); }}>－</RBtn>
-          <RBtn title="Tout derrière" onClick={(e) => { e.stopPropagation(); st.sendToBack(pageIndex, item.id); }}>⤓</RBtn>
+          <RBtn title="Tout devant" onClick={(e) => { e.stopPropagation(); st.bringToFront(pageIndex, item.id); }}>⤴</RBtn>
+          <RBtn title="Monter d'un plan" onClick={(e) => { e.stopPropagation(); st.bringForward(pageIndex, item.id); }}>＋</RBtn>
+          <RBtn title="Descendre d'un plan" onClick={(e) => { e.stopPropagation(); st.sendBackward(pageIndex, item.id); }}>－</RBtn>
+          <RBtn title="Tout derrière" onClick={(e) => { e.stopPropagation(); st.sendToBack(pageIndex, item.id); }}>⤵</RBtn>
         </div>
 
         <span className="mx-1 h-4 w-px bg-slate-200" />
@@ -145,7 +145,7 @@ export default function SelectionToolbar() {
         <div className="flex items-center gap-2">
           <button
             className={`h-6 px-2 rounded-full border text-[11px] ${cropActive ? 'bg-sky-50 border-sky-300 text-sky-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
-            title="Mode recadrage (glisser pour déplacer l’image dans le cadre)"
+            title="Mode recadrage (glisser pour déplacer l'image dans le cadre)"
             onClick={(e) => { e.stopPropagation(); st.updateSelected({ cropActive: !cropActive } as any); }}
           >
             {cropActive ? 'Recadrage : ON' : 'Recadrage'}
@@ -183,7 +183,7 @@ export default function SelectionToolbar() {
         <span className="mx-1 h-4 w-px bg-slate-200" />
 
         {/* Presets recadrage */}
-        <div className="hidden sm:flex items-center gap-1" title="Position de l’image dans le cadre">
+        <div className="hidden sm:flex items-center gap-1" title="Position de l'image dans le cadre">
           <RBtn onClick={(e) => { e.stopPropagation(); setOffset(-25, 0); }}>←</RBtn>
           <RBtn onClick={(e) => { e.stopPropagation(); setOffset(0, 0); }}>•</RBtn>
           <RBtn onClick={(e) => { e.stopPropagation(); setOffset(25, 0); }}>→</RBtn>
@@ -194,7 +194,7 @@ export default function SelectionToolbar() {
         <span className="mx-1 h-4 w-px bg-slate-200" />
 
         {/* Rotation */}
-        <div className="flex items-center gap-1" title="Rotation du cadre (et de l’image)">
+        <div className="flex items-center gap-1" title="Rotation du cadre (et de l'image)">
           <RBtn onClick={(e) => { e.stopPropagation(); setRot(rot - 1); }}>−1°</RBtn>
           <label className="flex items-center gap-2 text-[11px] text-slate-600">
             <span className="hidden sm:inline">Rot.</span>

@@ -3,8 +3,6 @@
 import React from 'react';
 import { useAlbumStore } from '@/store/useAlbumStore';
 
-type Asset = { id: string; url: string; name?: string; type?: string; size?: number };
-
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -17,16 +15,25 @@ export default function PlaceFromLibrary() {
 
   function onFiles(files: FileList | null) {
     if (!files || !files.length) return;
-    const toAdd: Asset[] = [];
+    const toAdd: any[] = [];
     for (const f of Array.from(files)) {
       if (!f.type.startsWith('image/')) continue;
       const url = URL.createObjectURL(f);
-      toAdd.push({ id: uid(), url, name: f.name, type: f.type, size: f.size });
+      const img = new Image();
+      img.onload = () => {
+        const ar = img.width && img.height ? img.width / img.height : undefined;
+        const asset = { id: uid(), url, ar };
+        toAdd.push(asset);
+        
+        // Ajouter l'asset au store
+        if (typeof st.addAsset === 'function') {
+          st.addAsset(asset);
+        } else if (typeof st.addAssets === 'function') {
+          st.addAssets([asset]);
+        }
+      };
+      img.src = url;
     }
-    if (!toAdd.length) return;
-
-    // ✅ Zustand : on peut mettre à jour via setState sans modifier le store
-    useAlbumStore.setState((s) => ({ assets: [...s.assets, ...toAdd] }));
   }
 
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -74,35 +81,35 @@ export default function PlaceFromLibrary() {
             {assets.map((a) => (
               <button
                 key={a.id}
-                title={a.name || 'image'}
+                title={`Image ${a.id}`}
                 className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100 hover:shadow"
                 onClick={() => {
-                  // Action au clic : à toi de choisir (ex: ajouter au canvas)
-                  // Exemple simple : créer un item photo centré
-                  const page = useAlbumStore.getState().pages[useAlbumStore.getState().currentIndex];
-                  const cmToPx = useAlbumStore.getState().cmToPx;
-                  const pageW = cmToPx(useAlbumStore.getState().size.w * 2);
-                  const pageH = cmToPx(useAlbumStore.getState().size.h);
-                  const w = Math.round(pageW * 0.28);
-                  const h = Math.round(pageH * 0.28);
-                  const x = Math.round((pageW - w) / 2);
-                  const y = Math.round((pageH - h) / 2);
+                  // Ajouter l'image à la page courante
+                  const currentPage = st.pages[st.currentPageIndex];
+                  if (!currentPage) return;
+                  
+                  const id = Math.random().toString(36).slice(2);
                   const newItem = {
-                    id: uid(),
+                    id,
                     kind: 'photo' as const,
-                    x, y, width: w, height: h, opacity: 1, rotation: 0, assetId: a.id,
+                    x: 2, // 2cm du bord
+                    y: 2, // 2cm du bord
+                    w: 6, // 6cm de largeur
+                    h: 4, // 4cm de hauteur
+                    opacity: 1,
+                    rotation: 0,
+                    assetId: a.id,
                   };
-                  useAlbumStore.setState((s) => {
-                    const pages = JSON.parse(JSON.stringify(s.pages));
-                    const idx = s.currentIndex;
-                    pages[idx].items.push(newItem);
-                    return { pages };
-                  });
+                  
+                  // Ajouter l'item à la page
+                  currentPage.items.push(newItem as any);
+                  
+                  // Sélectionner l'item ajouté
+                  st.selectedItemId = id;
                 }}
               >
                 {/* image */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.url} alt={a.name || 'image'} className="absolute inset-0 w-full h-full object-cover" />
+                <img src={a.url} alt={`Image ${a.id}`} className="absolute inset-0 w-full h-full object-cover" />
               </button>
             ))}
           </div>

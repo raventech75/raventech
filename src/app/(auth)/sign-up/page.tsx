@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { supabaseBrowser } from '@/lib/supabase/browser';
+import { supabaseBrowser } from '@/lib/supabase/Browser';
 
 function LogoMark({ className = '' }: { className?: string }) {
   return (

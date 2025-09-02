@@ -39,7 +39,8 @@ function PagePreview({ page }: { page: any }) {
 
 export default function PageThumbnails() {
   const st = useAlbumStore();
-  const { pages, currentIndex, setPageIndex, addPage, removePage, duplicatePage } = st;
+  const pages = st.pages;
+  const currentPageIndex = st.currentPageIndex;
 
   const [dragging, setDragging] = useState<number | null>(null);
 
@@ -53,19 +54,23 @@ export default function PageThumbnails() {
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => {
               if (dragging !== null && dragging !== i) {
-                const arr = [...pages];
-                const [moved] = arr.splice(dragging, 1);
-                arr.splice(i, 0, moved);
-                st.setState({ pages: arr, currentIndex: i });
+                st.setPages((prev) => {
+                  const arr = [...prev];
+                  const [moved] = arr.splice(dragging, 1);
+                  arr.splice(i, 0, moved);
+                  // Réajuster les index après le déplacement
+                  return arr.map((p, idx) => ({ ...p, index: idx }));
+                });
+                st.setCurrentPage(i);
               }
               setDragging(null);
             }}
             className={`flex-shrink-0 p-1 rounded-md shadow-sm cursor-grab ${
-              currentIndex === i
+              currentPageIndex === i
                 ? 'ring-2 ring-indigo-500'
                 : 'hover:ring-1 hover:ring-slate-300'
             } ${dragging === i ? 'opacity-50' : ''}`}
-            onClick={() => setPageIndex(i)}
+            onClick={() => st.setCurrentPage(i)}
             title={`Page ${i + 1}`}
           >
             <PagePreview page={page} />
@@ -77,14 +82,34 @@ export default function PageThumbnails() {
           {/* Actions supprimer / dupliquer */}
           <div className="absolute -top-2 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition">
             <button
-              onClick={() => duplicatePage(i)}
+              onClick={() => {
+                // Dupliquer la page (implémentation basique)
+                const newPage = { 
+                  ...page, 
+                  id: Math.random().toString(36).slice(2),
+                  index: i + 1
+                };
+                st.setPages((prev) => {
+                  const newPages = [...prev];
+                  newPages.splice(i + 1, 0, newPage);
+                  // Réajuster les index des pages suivantes
+                  return newPages.map((p, idx) => ({ ...p, index: idx }));
+                });
+              }}
               className="text-xs px-1 bg-white border rounded shadow hover:bg-slate-50"
               title="Dupliquer"
             >
               📑
             </button>
             <button
-              onClick={() => removePage(i)}
+              onClick={() => {
+                if (pages.length > 1) {
+                  st.setPages((prev) => prev.filter((_, index) => index !== i));
+                  if (currentPageIndex >= pages.length - 1) {
+                    st.setCurrentPage(pages.length - 2);
+                  }
+                }
+              }}
               className="text-xs px-1 bg-white border rounded shadow hover:bg-slate-50"
               title="Supprimer"
             >
@@ -96,7 +121,17 @@ export default function PageThumbnails() {
 
       {/* Bouton ajouter page */}
       <button
-        onClick={() => addPage()}
+        onClick={() => {
+          // Ajouter une nouvelle page vide
+          const newPage = {
+            id: Math.random().toString(36).slice(2),
+            index: pages.length,
+            items: [],
+            background: { kind: 'none' as const }
+          };
+          st.setPages((prev) => [...prev, newPage]);
+          st.setCurrentPage(pages.length);
+        }}
         className="flex-shrink-0 w-16 h-12 flex items-center justify-center border border-dashed border-slate-300 rounded-md text-slate-400 hover:text-indigo-500 hover:border-indigo-400"
       >
         +

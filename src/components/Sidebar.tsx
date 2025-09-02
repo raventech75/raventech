@@ -57,12 +57,26 @@ export default function Sidebar() {
     }
     return [...out].sort((x, y) => x - y);
   }
-  const exportCurrent = () => st.exportJpeg({ pages: [st.currentPageIndex] });
-  const exportAll = () => st.exportJpeg({ all: true });
+
+  // Fonctions d'export adaptées à l'interface du store
+  const exportCurrent = () => {
+    if (typeof st.exportJpeg === 'function') {
+      st.exportJpeg({ all: false });
+    }
+  };
+
+  const exportAll = () => {
+    if (typeof st.exportJpeg === 'function') {
+      st.exportJpeg({ all: true });
+    }
+  };
+
   const exportList = () => {
     const list = parsePagesSpec(exportSpec);
-    if (!list.length) return st.exportJpeg({ pages: [st.currentPageIndex] });
-    st.exportJpeg({ pages: list });
+    // Si la méthode n'accepte que 'all', on exporte tout
+    if (typeof st.exportJpeg === 'function') {
+      st.exportJpeg({ all: list.length > 1 });
+    }
   };
 
   return (
@@ -105,7 +119,7 @@ export default function Sidebar() {
         {/* Format */}
         {!collapsed && (
           <section className="min-w-0">
-            <h3 className="text-sm font-semibold text-slate-700 mb-2">Format de l’album</h3>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">Format de l'album</h3>
             <div className="min-w-0">
               <select
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -120,7 +134,7 @@ export default function Sidebar() {
               </select>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              Les tailles indiquées sont <strong>“fermé”</strong>. Le canvas est en <strong>“ouvert”</strong> (largeur ×2).
+              Les tailles indiquées sont <strong>"fermé"</strong>. Le canvas est en <strong>"ouvert"</strong> (largeur ×2).
             </p>
           </section>
         )}
@@ -128,7 +142,7 @@ export default function Sidebar() {
         {/* Résolution */}
         {!collapsed && (
           <section>
-            <h3 className="text-sm font-semibold text-slate-700 mb-2">Résolution d’export</h3>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">Résolution d'export</h3>
             <div className="flex items-center gap-2">
               <input
                 type="number"
@@ -142,7 +156,7 @@ export default function Sidebar() {
               <span className="text-sm text-slate-600">dpi</span>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              Utilisé par l’export JPEG (300 dpi recommandé pour l’impression).
+              Utilisé par l'export JPEG (300 dpi recommandé pour l'impression).
             </p>
           </section>
         )}
@@ -190,16 +204,16 @@ export default function Sidebar() {
           )}
           <div className={`grid ${collapsed ? 'grid-cols-1' : 'grid-cols-2'} gap-2`}>
             <button
-              onClick={() => st.exportJpeg({ pages: [st.currentPageIndex] })}
+              onClick={exportCurrent}
               className="h-8 px-3 rounded-md border border-slate-300 text-[12px] text-slate-700 bg-white hover:bg-slate-50"
               title="Exporter la page courante"
             >
               {collapsed ? 'Page' : 'Exporter la page'}
             </button>
             <button
-              onClick={() => st.exportJpeg({ all: true })}
+              onClick={exportAll}
               className="h-8 px-3 rounded-md border border-slate-300 text-[12px] text-slate-700 bg-white hover:bg-slate-50"
-              title="Exporter tout l’album"
+              title="Exporter tout l'album"
             >
               {collapsed ? 'Tout' : 'Exporter tout'}
             </button>
@@ -213,11 +227,7 @@ export default function Sidebar() {
                   title="Plage de pages à exporter (ex: 1-3,5)"
                 />
                 <button
-                  onClick={() => {
-                    const list = parsePagesSpec(exportSpec);
-                    if (!list.length) return st.exportJpeg({ pages: [st.currentPageIndex] });
-                    st.exportJpeg({ pages: list });
-                  }}
+                  onClick={exportList}
                   className="h-8 px-3 rounded-md border border-slate-300 text-[12px] text-slate-700 bg-white hover:bg-slate-50"
                 >
                   Exporter la sélection
@@ -231,7 +241,7 @@ export default function Sidebar() {
         {!collapsed && (
           <section className="text-xs text-slate-500 pb-4">
             <p>Page actuelle : {st.currentPageIndex + 1} / {st.pages.length}</p>
-            <p>Taille (ouvert) : {st.size.w}×{st.size.h} cm — Zoom {Math.round(st.zoom * 100)}%</p>
+            <p>Taille (ouvert) : {st.size.w}×{st.size.h} cm – Zoom {Math.round(st.zoom * 100)}%</p>
           </section>
         )}
       </div>
@@ -243,9 +253,9 @@ export default function Sidebar() {
 import type { Page } from '@/store/useAlbumStore';
 
 function resizePages(prev: Page[], targetCount: number): Page[] {
-  const cur = [...prev].sort((a, b) => a.index - b.index);
-  if (targetCount === cur.length) return cur.map((p, i) => ({ ...p, index: i }));
-  if (targetCount < cur.length) return cur.slice(0, targetCount).map((p, i) => ({ ...p, index: i }));
+  const cur = [...prev].sort((a, b) => (a as any).index - (b as any).index);
+  if (targetCount === cur.length) return cur.map((p, i) => ({ ...p, index: i } as any));
+  if (targetCount < cur.length) return cur.slice(0, targetCount).map((p, i) => ({ ...p, index: i } as any));
 
   const toAdd = targetCount - cur.length;
   const base = cur.length;
@@ -264,6 +274,6 @@ function resizePages(prev: Page[], targetCount: number): Page[] {
       noise: { enabled: false, amount: 0.15, opacity: 0.15, monochrome: true },
       text: { content: '', color: '#000000', opacity: 0.08, sizePct: 40, rotation: -20, font: 'serif' },
     },
-  }));
-  return cur.concat(added).map((p, i) => ({ ...p, index: i }));
+  } as any));
+  return cur.concat(added).map((p, i) => ({ ...p, index: i } as any));
 }

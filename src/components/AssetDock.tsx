@@ -1,33 +1,68 @@
 'use client';
 
-import * as React from 'react';
+import React from 'react';
 import { useAlbumStore } from '@/store/useAlbumStore';
 
 export default function AssetDock() {
   const st = useAlbumStore();
+  const [open, setOpen] = React.useState(false);
 
   return (
-    <div className="flex gap-2 overflow-x-auto p-2 border-t border-slate-200 bg-slate-50">
-      {st.assets.map((a) => (
-        <button
-          key={a.id}
-          className="shrink-0 w-20 h-20 rounded-md border border-slate-200 overflow-hidden bg-white hover:shadow-sm"
-          // ✅ fallback si pas de "name"
-          title={a.url.split('/').pop() || 'image'}
-          onClick={() => {
-            const pg = st.pages[st.currentPageIndex];
-            if (!pg) return;
-            st.addPhotoAutoPack(a.id);
-          }}
-        >
-          {/* Preview si disponible, sinon l’image principale */}
-          <img
-            src={a.previewUrl || a.url}
-            alt="asset"
-            className="w-full h-full object-cover"
-          />
-        </button>
-      ))}
-    </div>
+    <>
+      {/* Bouton flottant */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="fixed bottom-3 left-3 z-50 rounded-full border border-slate-300 bg-white/90 shadow px-3 py-2 text-sm hover:shadow-md"
+      >
+        {open ? 'Fermer la bibliothèque' : 'Bibliothèque'}
+      </button>
+
+      {open && (
+        <div className="fixed left-0 right-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
+          <div className="mx-auto max-w-6xl px-3 py-2">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs text-slate-600">
+                {st.assets.length} images
+              </div>
+              <button
+                onClick={() => setOpen(false)}
+                className="text-xs rounded-md border border-slate-200 px-2 py-1 bg-white hover:shadow"
+              >
+                Fermer
+              </button>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {st.assets.map((a) => (
+                <button
+                  key={a.id}
+                  className="shrink-0 w-20 h-20 rounded-md border border-slate-200 overflow-hidden bg-white hover:shadow-sm"
+                  title={`Image ${a.id}`}
+                  onClick={() => {
+                    const p = st.pages[st.currentPageIndex];
+                    const id = Math.random().toString(36).slice(2);
+                    const ph = {
+                      id,
+                      kind: 'photo' as const,
+                      x: 24,
+                      y: 24,
+                      width: 220,
+                      height: 160,
+                      opacity: 1,
+                      rotation: 0,
+                      assetId: a.id,
+                    };
+                    p.items.push(ph as any);
+                    st.selectedItemId = id;
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={a.url} alt={`Image ${a.id}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

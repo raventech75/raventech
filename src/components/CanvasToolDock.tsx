@@ -73,7 +73,7 @@ export default function CanvasToolDock() {
 
   const cropActive = !!(item as any).cropActive;
 
-  const rot = item.rot ?? 0;
+  const rot = (item as any).rot ?? 0;
   const setRot = (deg: number | ((d: number) => number)) => {
     const val = typeof deg === 'function' ? deg(rot) : deg;
     st.updateSelected({ rot: ((val % 360) + 360) % 360 });
@@ -85,7 +85,7 @@ export default function CanvasToolDock() {
   function applyAspect(ratio: number | null) {
     if (!ratio) return;
     const size = st.size;
-    const { x, y, w, h } = item;
+    const { x, y, w, h } = item as any;
     const cx = x + w / 2;
     const cy = y + h / 2;
 
@@ -122,10 +122,10 @@ export default function CanvasToolDock() {
 
           {/* Plan */}
           <div className="flex items-center gap-1">
-            <RBtn title="Tout devant" onClick={() => st.bringToFront(pageIndex, item.id)}>⤒</RBtn>
-            <RBtn title="Monter d’un plan" onClick={() => st.bringForward(pageIndex, item.id)}>＋</RBtn>
-            <RBtn title="Descendre d’un plan" onClick={() => st.sendBackward(pageIndex, item.id)}>－</RBtn>
-            <RBtn title="Tout derrière" onClick={() => st.sendToBack(pageIndex, item.id)}>⤓</RBtn>
+            <RBtn title="Tout devant" onClick={() => st.bringToFront(pageIndex, item.id)}>⤴</RBtn>
+            <RBtn title="Monter d'un plan" onClick={() => st.bringForward(pageIndex, item.id)}>＋</RBtn>
+            <RBtn title="Descendre d'un plan" onClick={() => st.sendBackward(pageIndex, item.id)}>－</RBtn>
+            <RBtn title="Tout derrière" onClick={() => st.sendToBack(pageIndex, item.id)}>⤵</RBtn>
           </div>
 
           <span className="mx-1 h-5 w-px bg-slate-200" />
@@ -157,13 +157,26 @@ export default function CanvasToolDock() {
 
           <span className="mx-1 h-5 w-px bg-slate-200" />
 
+          {/* Toggle Auto Layout */}
+<button
+  className={`h-8 px-3 rounded-full border text-[12px] ${
+    st.autoLayout 
+      ? 'bg-green-50 border-green-300 text-green-700' 
+      : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+  }`}
+  onClick={st.toggleAutoLayout}
+  title={st.autoLayout ? "Désactiver le placement automatique" : "Activer le placement automatique"}
+>
+  {st.autoLayout ? 'Auto: ON' : 'Auto: OFF'}
+</button>
+
           {/* Recadrage / ratio */}
           <div className="flex items-center gap-2">
             <button
               className={`h-7 px-3 rounded-full border text-[12px] ${
                 cropActive ? 'bg-sky-50 border-sky-300 text-sky-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'
               }`}
-              title="Mode recadrage (Alt+glisser dans l’image, ou glisser directement quand activé)"
+              title="Mode recadrage (Alt+glisser dans l'image, ou glisser directement quand activé)"
               onClick={() => st.updateSelected({ cropActive: !cropActive } as any)}
             >
               {cropActive ? 'Recadrage : ON' : 'Recadrage'}
@@ -202,7 +215,7 @@ export default function CanvasToolDock() {
           <span className="mx-1 h-5 w-px bg-slate-200" />
 
           {/* Presets offset */}
-          <div className="hidden md:flex items-center gap-1" title="Position de l’image dans le cadre">
+          <div className="hidden md:flex items-center gap-1" title="Position de l'image dans le cadre">
             <RBtn onClick={() => setOffset(-25, 0)}>←</RBtn>
             <RBtn onClick={() => setOffset(0, 0)}>•</RBtn>
             <RBtn onClick={() => setOffset(25, 0)}>→</RBtn>
@@ -222,7 +235,7 @@ export default function CanvasToolDock() {
                 min={0}
                 max={360}
                 step={1}
-                value={item.rot ?? 0}
+                value={(item as any).rot ?? 0}
                 onChange={(e) => setRot(parseInt(e.target.value, 10))}
                 className="w-28 sm:w-36 accent-sky-600"
               />

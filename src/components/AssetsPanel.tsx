@@ -73,7 +73,7 @@ export default function AssetsPanel() {
 
   return (
     <div>
-      {/* Barre d’import */}
+      {/* Barre d'import */}
       <div className="flex items-center gap-2 pb-3">
         <button
           type="button"
@@ -95,7 +95,7 @@ export default function AssetsPanel() {
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="Coller une URL d’image…"
+            placeholder="Coller une URL d'image…"
             className="text-[12px] border rounded-full px-3 py-1.5 w-[180px]"
           />
           <button
@@ -117,10 +117,10 @@ export default function AssetsPanel() {
           isHover ? 'border-sky-400 bg-sky-50' : 'border-slate-300 bg-slate-50/50'
         }`}
       >
-        Glissez des photos ici ou utilisez le bouton “Importer”.
+        Glissez des photos ici ou utilisez le bouton "Importer".
       </div>
 
-      {/* Grille d’assets */}
+      {/* Grille d'assets */}
       <div className="mt-4 grid grid-cols-2 gap-3">
         {st.assets.map((a) => (
           <AssetCard key={a.id} assetId={a.id} />
@@ -134,20 +134,32 @@ function AssetCard({ assetId }: { assetId: string }) {
   const st = useAlbumStore();
   const asset = st.assets.find((x) => x.id === assetId)!;
 
-  // Est-ce que l’asset est utilisé sur la page courante ?
+  // Est-ce que l'asset est utilisé sur la page courante ?
   const inUse = st.pages[st.currentPageIndex]?.items.some((i) => i.kind === 'photo' && i.assetId === assetId);
 
   const addToPage = () => {
-    // Positionne un cadre 6x4 cm en haut-gauche avec AR de l’image
+    // Positionne un cadre 6x4 cm en haut-gauche avec AR de l'image
+    const p = st.pages[st.currentPageIndex];
+    const id = Math.random().toString(36).slice(2);
     const w = 6;
     const h = asset.ar ? w / asset.ar : 4;
-    st.addPhotoOnPage({
+    
+    // Convertir cm en pixels (approximation : 1 cm ≈ 37.8 px)
+    const pixelRatio = 37.8;
+    const ph = {
+      id,
+      kind: 'photo' as const,
+      x: 1 * pixelRatio, // 1 cm converti en pixels
+      y: 1 * pixelRatio, // 1 cm converti en pixels
+      width: w * pixelRatio, // 6 cm converti en pixels
+      height: h * pixelRatio, // hauteur calculée convertie en pixels
+      opacity: 1,
+      rotation: 0,
       assetId,
-      x: 1,
-      y: 1,
-      w,
-      h,
-    });
+    };
+    
+    p.items.push(ph as any);
+    st.selectedItemId = id;
   };
 
   const removeAsset = () => {
@@ -175,7 +187,7 @@ function AssetCard({ assetId }: { assetId: string }) {
           + Ajouter
         </button>
 
-        {/* Badge “utilisée” */}
+        {/* Badge "utilisée" */}
         {inUse && (
           <span className="absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded-full bg-slate-900 text-white/90 shadow">
             utilisée

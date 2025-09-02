@@ -8,7 +8,6 @@ export type AlbumSizeCm = { w: number; h: number };
 export type Asset = {
   id: string;
   url: string;
-  name?: string;
   ar?: number;               // aspect ratio w/h
   previewUrl?: string;       // miniature downscalée (optionnelle)
 };
@@ -34,7 +33,7 @@ export type Item = {
   fontSize?: number;
 
   // Style & ordre
-  z?: number;                             // ordre d’empilement
+  z?: number;                             // ordre d'empilement
   opacity?: number;                       // 0..1
   featherPct?: number;                    // 0..40 (%)
   borderRadiusMode?: 'rounded'|'circle'|'squircle';
@@ -52,11 +51,11 @@ export type PageBackground = {
   image?: {
     assetId?: string;
     url?: string;
-    fit: 'cover' | 'contain';
-    opacity: number;
-    scale: number;
-    offsetX: number;
-    offsetY: number;
+    fit?: 'cover' | 'contain';
+    opacity?: number;
+    scale?: number;
+    offsetX?: number;
+    offsetY?: number;
   };
   vignette?: { enabled: boolean; strength: number };
   texture?: { type: 'none'|'paper'|'linen'|'grid'; opacity: number };
@@ -97,12 +96,7 @@ type Store = {
   snapEnabled: boolean;
   snapDistancePx: number;
   marginsCm: { top: number; right: number; bottom: number; left: number };
-
-  // Impression (ajouté)
-  bleedMm: number;                         // fond perdu
-  safeMm: number;                          // marge de sécurité
-  setBleedMm: (v: number) => void;
-  setSafeMm: (v: number) => void;
+  autoLayout: boolean;            // mode layout automatique activé/désactivé
 
   // UI global
   ui: UIState;
@@ -138,7 +132,6 @@ type Store = {
   // items
   updateItem: (pageIndex: number, itemId: string, patch: Partial<Item>) => void;
   replaceItems: (pageIndex: number, items: Item[]) => void;
-  addPhotoOnPage: (opts: { assetId: string; x?: number; y?: number; w?: number; h?: number; z?: number }) => string | void;
 
   // sélection & ordre
   selectItem: (pageIndex: number, itemId?: string) => void;
@@ -159,6 +152,7 @@ type Store = {
   toggleRulers: () => void;
   toggleGrid: () => void;
   toggleSnap: () => void;
+  toggleAutoLayout: () => void;           // basculer le mode layout automatique
   setSnapDistancePx: (v: number) => void;
   setMargins: (m: { top?: number; right?: number; bottom?: number; left?: number }) => void;
 
@@ -185,10 +179,10 @@ type Store = {
 
   // placement intelligent
   addPhotoAutoPack: (assetId: string) => void;
-  relayoutCurrentPage: () => void;
+  relayoutCurrentPage: () => void; 
 };
 
-/* ========= Formats d’album (fermé) -> canvas ouvert ========= */
+/* ========= Formats d'album (fermé) -> canvas ouvert ========= */
 export type AlbumFormat = {
   label: string;
   closed: { w: number; h: number };
@@ -250,11 +244,13 @@ function relayoutPhotosFullCover(
   const availW = Math.max(1, size.w - left - right);
   const availH = Math.max(1, size.h - top - bottom);
 
+  // Sélectionner uniquement les items photo, conserver l'ordre d'origine.
   const photos = page.items.filter(i => i.kind === 'photo');
   const others = page.items.filter(i => i.kind !== 'photo');
 
   if (photos.length === 0) return page.items;
 
+  // Récupère le ratio de chaque photo
   const ars = photos.map(it => {
     const a = it.assetId ? assets.find(x => x.id === it.assetId) : undefined;
     if (a?.ar && a.ar > 0) return a.ar;
@@ -262,6 +258,7 @@ function relayoutPhotosFullCover(
     return 1;
   });
 
+  // Construire les lignes selon une hauteur cible nominale (H0)
   const N = photos.length;
   const avgAr = ars.reduce((s, r) => s + r, 0) / N;
   const approxRows = Math.max(1, Math.round(Math.sqrt(N * (avgAr * availH / Math.max(1, availW)))));
@@ -281,11 +278,13 @@ function relayoutPhotosFullCover(
   }
   if (cur.idxs.length) rows.push(cur);
 
+  // Hauteur réelle de chaque ligne pour occuper exactement la largeur
   const rowHeightsAtScale1 = rows.map(r => availW / Math.max(0.0001, r.sumAr));
   const totalH1 = rowHeightsAtScale1.reduce((s, h) => s + h, 0);
   const scaleY = availH / Math.max(0.0001, totalH1);
   const rowHeights = rowHeightsAtScale1.map(h => h * scaleY);
 
+  // Générer les nouveaux items photos
   const outPhotos: Item[] = [];
   let y = top;
   for (let ri = 0; ri < rows.length; ri++) {
@@ -305,8 +304,11 @@ function relayoutPhotosFullCover(
     y += h;
   }
 
+  // Conserver le z des éléments
   outPhotos.sort((a,b)=>(a.z ?? 0) - (b.z ?? 0));
-  return [...outPhotos, ...others];
+
+  const result = [...outPhotos, ...others];
+  return result;
 }
 
 function round2(v: number) { return Math.round(v * 100) / 100; }
@@ -328,12 +330,7 @@ export const useAlbumStore = create<Store>((set, get) => ({
   snapEnabled: true,
   snapDistancePx: 10,
   marginsCm: { top: 1, right: 1, bottom: 1, left: 1 },
-
-  // impression (ajouté)
-  bleedMm: 3,
-  safeMm: 5,
-  setBleedMm: (v) => set({ bleedMm: Math.max(0, v) }),
-  setSafeMm:  (v) => set({ safeMm:  Math.max(0, v) }),
+  autoLayout: true,               // par défaut, le layout automatique est activé
 
   // UI
   ui: { previewOpen: false, exporting: false, importingAssets: { active: false, total: 0, done: 0 } },
@@ -388,6 +385,7 @@ export const useAlbumStore = create<Store>((set, get) => ({
       })),
     });
 
+    // Signaux UI (fit auto)
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('album:size-changed'));
       window.dispatchEvent(new CustomEvent('album:zoom-fit'));
@@ -452,15 +450,19 @@ export const useAlbumStore = create<Store>((set, get) => ({
     if (!id) return;
     pushHistory(get, set);
 
+    // supprimer
     let pages = s.pages.map((p, i) => {
       if (i !== s.currentPageIndex) return p;
       return { ...p, items: p.items.filter(it => it.id !== id) };
     });
 
-    const pg = pages[s.currentPageIndex];
-    if (pg) {
-      const relayout = relayoutPhotosFullCover(pg, s.size, s.marginsCm, s.assets);
-      pages = pages.map((p, i) => (i === s.currentPageIndex ? { ...p, items: relayout } : p));
+    // réorganisation automatique des photos restantes SEULEMENT si le mode auto est activé
+    if (s.autoLayout) {
+      const pg = pages[s.currentPageIndex];
+      if (pg) {
+        const relayout = relayoutPhotosFullCover(pg, s.size, s.marginsCm, s.assets);
+        pages = pages.map((p, i) => (i === s.currentPageIndex ? { ...p, items: relayout } : p));
+      }
     }
 
     set({ pages, selectedItemId: undefined });
@@ -541,6 +543,7 @@ export const useAlbumStore = create<Store>((set, get) => ({
   toggleRulers: () => set((s) => ({ showRulers: !s.showRulers })),
   toggleGrid:   () => set((s) => ({ showGrid: !s.showGrid })),
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+  toggleAutoLayout: () => set((s) => ({ autoLayout: !s.autoLayout })),
   setSnapDistancePx: (v) => set({ snapDistancePx: Math.max(1, Math.min(40, v)) }),
   setMargins: (m) => set((s) => ({ marginsCm: { ...s.marginsCm, ...m } })),
 
@@ -563,6 +566,7 @@ export const useAlbumStore = create<Store>((set, get) => ({
 
         await renderBackgroundToCanvas(ctx, page.background, pxW, pxH, s.assets);
 
+        // items (photos + textes)
         for (const it of [...page.items].sort((a,b)=>(a.z??0)-(b.z??0))) {
           const x = Math.round((it.x / 2.54) * s.dpi);
           const y = Math.round((it.y / 2.54) * s.dpi);
@@ -664,13 +668,26 @@ export const useAlbumStore = create<Store>((set, get) => ({
     return pg?.items?.some((it) => it.kind === 'photo' && it.assetId === assetId) ?? false;
   },
 
+  /* ===== Réagence toutes les photos de la page courante pour couvrir 100% de la zone utile ===== */
+  relayoutCurrentPage: () => {
+    const s = get();
+    const pg = s.pages[s.currentPageIndex];
+    if (!pg) return;
+
+    const nextItems = relayoutPhotosFullCover(pg, s.size, s.marginsCm, s.assets);
+    const pages = s.pages.map((p, i) => (i === s.currentPageIndex ? { ...p, items: nextItems } : p));
+    set({ pages });
+  },
+
   /* ===== Placement intelligent (plein cadre – justified) ===== */
   addPhotoAutoPack: (assetId: string) => {
     const st = get();
     const pgIndex = st.currentPageIndex;
     const pages = [...st.pages];
-    const pg = pages[pgIndex]; if (!pg) return;
+    const pg = pages[pgIndex]; 
+    if (!pg) return;
 
+    // on insère l'item puis on relayout toutes les photos
     const id = (crypto as any)?.randomUUID ? (crypto as any).randomUUID() : 'it_' + Math.random().toString(36).slice(2);
     const maxZ = Math.max(0, ...pg.items.map(i => i.z ?? 0));
     const newItem: Item = {
@@ -689,16 +706,6 @@ export const useAlbumStore = create<Store>((set, get) => ({
 
     pages[pgIndex] = { ...withNew, items: relayout };
     set({ pages, selectedItemId: id });
-  },
-
-  relayoutCurrentPage: () => {
-    const s = get();
-    const pg = s.pages[s.currentPageIndex];
-    if (!pg) return;
-
-    const nextItems = relayoutPhotosFullCover(pg, s.size, s.marginsCm, s.assets);
-    const pages = s.pages.map((p, i) => (i === s.currentPageIndex ? { ...p, items: nextItems } : p));
-    set({ pages });
   },
 }));
 
@@ -799,9 +806,10 @@ async function renderBackgroundToCanvas(
       const img = await loadImage(url);
       drawCoverContain(
         ctx, img, 0, 0, pxW, pxH,
-        bg.image.fit, bg.image.scale,
-        { x: bg.image.offsetX, y: bg.image.offsetY },
-        bg.image.opacity
+        bg.image.fit ?? 'cover', 
+        bg.image.scale ?? 1,
+        { x: bg.image.offsetX ?? 0, y: bg.image.offsetY ?? 0 },
+        bg.image.opacity ?? 1
       );
     } catch {}
   }
