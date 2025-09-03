@@ -3,8 +3,24 @@
 import React from 'react';
 import { useAlbumStore } from '@/store/useAlbumStore';
 
+// Helper robuste : lit une propriété "name" si elle existe
+function getAssetName(a: unknown): string | undefined {
+  if (a && typeof a === 'object' && 'name' in (a as any)) {
+    const n = (a as any).name;
+    if (typeof n === 'string' && n.trim().length > 0) return n;
+  }
+  return undefined;
+}
+
+type Asset = { id: string; url: string; name?: string; type?: string; size?: number };
+
 function uid() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+// ✅ conversion cm → px locale (au lieu de dépendre du store)
+function cmToPx(cm: number) {
+  return (cm / 2.54) * 96;
 }
 
 export default function PlaceFromLibrary() {
@@ -15,32 +31,27 @@ export default function PlaceFromLibrary() {
 
   function onFiles(files: FileList | null) {
     if (!files || !files.length) return;
-    const toAdd: any[] = [];
+    const toAdd: Asset[] = [];
     for (const f of Array.from(files)) {
       if (!f.type.startsWith('image/')) continue;
       const url = URL.createObjectURL(f);
-      const img = new Image();
-      img.onload = () => {
-        const ar = img.width && img.height ? img.width / img.height : undefined;
-        const asset = { id: uid(), url, ar };
-        toAdd.push(asset);
-        
-        // Ajouter l'asset au store
-        if (typeof st.addAsset === 'function') {
-          st.addAsset(asset);
-        } else if (typeof st.addAssets === 'function') {
-          st.addAssets([asset]);
-        }
-      };
-      img.src = url;
+      toAdd.push({ id: uid(), url, name: getAssetName(f), type: f.type, size: f.size });
     }
+    if (!toAdd.length) return;
+
+    useAlbumStore.setState((s) => ({ assets: [...s.assets, ...toAdd] }));
   }
 
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); e.stopPropagation(); setIsOver(false);
+    e.preventDefault();
+    e.stopPropagation();
+    setIsOver(false);
     onFiles(e.dataTransfer.files);
   };
-  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsOver(true); };
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsOver(true);
+  };
   const onDragLeave = () => setIsOver(false);
 
   return (
@@ -61,10 +72,16 @@ export default function PlaceFromLibrary() {
             (isOver ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 bg-slate-50')
           }
         >
-          <p className="text-sm text-slate-900 mb-2">Glissez vos images ici, ou cliquez sur <button
-            onClick={() => inputRef.current?.click()}
-            className="text-indigo-600 hover:underline"
-          >Importer</button>.</p>
+          <p className="text-sm text-slate-900 mb-2">
+            Glissez vos images ici, ou cliquez sur{' '}
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="text-indigo-600 hover:underline"
+            >
+              Importer
+            </button>
+            .
+          </p>
           <input
             ref={inputRef}
             type="file"
@@ -81,35 +98,45 @@ export default function PlaceFromLibrary() {
             {assets.map((a) => (
               <button
                 key={a.id}
-                title={`Image ${a.id}`}
+                title={getAssetName(a) ?? 'image'}
                 className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100 hover:shadow"
                 onClick={() => {
-                  // Ajouter l'image à la page courante
-                  const currentPage = st.pages[st.currentPageIndex];
-                  if (!currentPage) return;
-                  
-                  const id = Math.random().toString(36).slice(2);
+                  const state = useAlbumStore.getState();
+                  const page = state.pages[state.currentPageIndex];
+                  const pageW = cmToPx(state.size.w * 2);
+                  const pageH = cmToPx(state.size.h);
+
+                  const w = Math.round(pageW * 0.28);
+                  const h = Math.round(pageH * 0.28);
+                  const x = Math.round((pageW - w) / 2);
+                  const y = Math.round((pageH - h) / 2);
+
                   const newItem = {
-                    id,
+                    id: uid(),
                     kind: 'photo' as const,
-                    x: 2, // 2cm du bord
-                    y: 2, // 2cm du bord
-                    w: 6, // 6cm de largeur
-                    h: 4, // 4cm de hauteur
+                    x,
+                    y,
+                    width: w,
+                    height: h,
                     opacity: 1,
                     rotation: 0,
                     assetId: a.id,
                   };
-                  
-                  // Ajouter l'item à la page
-                  currentPage.items.push(newItem as any);
-                  
-                  // Sélectionner l'item ajouté
-                  st.selectedItemId = id;
+
+                  useAlbumStore.setState((s) => {
+                    const pages = JSON.parse(JSON.stringify(s.pages));
+                    const idx = s.currentPageIndex;
+                    pages[idx].items.push(newItem);
+                    return { pages };
+                  });
                 }}
               >
-                {/* image */}
-                <img src={a.url} alt={`Image ${a.id}`} className="absolute inset-0 w-full h-full object-cover" />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={a.url}
+                  alt={getAssetName(a) ?? 'image'}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
               </button>
             ))}
           </div>

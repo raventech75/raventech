@@ -1,60 +1,65 @@
 'use client';
 
 import React from 'react';
-import { useAlbumStore } from '@/store/useAlbumStore';
-
-type Asset = { id: string; url: string; ar?: number };
+import { useAlbumStore, type Asset } from '@/store/useAlbumStore';
 
 function uid() {
-  if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) return (crypto as any).randomUUID();
+  if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) {
+    return (crypto as any).randomUUID();
+  }
   return 'id_' + Math.random().toString(36).slice(2, 10);
+}
+
+async function readImage(file: File): Promise<Asset | null> {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  return new Promise((resolve) => {
+    img.onload = () => {
+      const ar = img.width && img.height ? img.width / img.height : undefined;
+      // ✅ ne pas inclure "name" (absent du type Asset)
+      resolve({ id: uid(), url, ar });
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
 }
 
 export default function PhotoImport() {
   const st = useAlbumStore();
-  const inputRef = React.useRef<HTMLInputElement>(null);
-
-  const readImage = (file: File) =>
-    new Promise<Asset | null>((resolve) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        const ar = img.width && img.height ? img.width / img.height : undefined;
-        resolve({ id: uid(), url, ar });
-      };
-      img.onerror = () => resolve(null);
-      img.src = url;
-    });
+  const fileRef = React.useRef<HTMLInputElement>(null);
 
   async function onPickFiles(files: FileList | null) {
     if (!files || !files.length) return;
-    const tasks: Promise<Asset | null>[] = [];
+    const promises: Promise<Asset | null>[] = [];
     Array.from(files).forEach((f) => {
       if (!f.type.startsWith('image/')) return;
-      tasks.push(readImage(f));
+      promises.push(readImage(f));
     });
-    const assets = (await Promise.all(tasks)).filter(Boolean) as Asset[];
+    const results = (await Promise.all(promises)).filter(Boolean) as Asset[];
+    if (!results.length) return;
 
-    // Compat : selon ton store tu peux avoir addAssets OU juste addAsset
-    if (typeof st.addAssets === 'function') st.addAssets(assets);
-    else assets.forEach((a) => st.addAsset(a));
+    // Compatibilité store : addAssets (batch) ou addAsset (unitaire)
+    if (typeof (st as any).addAssets === 'function') {
+      (st as any).addAssets(results);
+    } else {
+      results.forEach((a) => (st as any).addAsset?.(a));
+    }
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div>
       <button
         type="button"
-        onClick={() => inputRef.current?.click()}
-        className="rounded-full px-3 py-1.5 text-[12px] bg-sky-600 text-white hover:bg-sky-700 shadow-sm"
+        onClick={() => fileRef.current?.click()}
+        className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm hover:shadow"
       >
-        Importer des images
+        Importer des photos
       </button>
-
       <input
-        ref={inputRef}
+        ref={fileRef}
         type="file"
-        accept="image/*"
         multiple
+        accept="image/*"
         className="hidden"
         onChange={(e) => onPickFiles(e.target.files)}
       />

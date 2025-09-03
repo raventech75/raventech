@@ -31,6 +31,7 @@ type DragState = {
     | 'topright'
     | 'bottomleft'
     | 'bottomright'
+    | 'corner'
     | 'inner-pan'
     | null;
   originPx: { x: number; y: number } | null;
@@ -116,7 +117,7 @@ function GridOverlay({ zoom }: { zoom: number }) {
 }
 
 function Grip({ className, dir }: { className: string; dir:
-  'left'|'right'|'top'|'bottom'|'topleft'|'topright'|'bottomleft'|'bottomright'
+  'left'|'right'|'top'|'bottom'|'topleft'|'topright'|'bottomleft'|'bottomright'|'corner'
 }) {
   return (
     <div
@@ -245,7 +246,7 @@ export default function EditorCanvas() {
     panOrigin.current = { x: e.clientX, y: e.clientY };
     panStart.current  = { ...st.panPx };
     setIsPanning(true);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onPointerMovePan = (e: React.PointerEvent) => {
     if (!isPanning || !panOrigin.current) return;
@@ -440,7 +441,7 @@ export default function EditorCanvas() {
       startOffsetPct: wantInnerPan ? { x: (current as any)?.offsetXpct ?? 0, y: (current as any)?.offsetYpct ?? 0 } : null,
     };
 
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
 
     if (e.pointerType === 'touch') {
       const pr = pinchRef.current;
@@ -530,19 +531,16 @@ export default function EditorCanvas() {
       const res = snapMoveBox(d.startBoxCm, dxCm, dyCm, d.id);
       const x = Math.max(0, Math.min(size.w - it.w, res.x));
       const y = Math.max(0, Math.min(size.h - it.h, res.y));
-      st.updateItem(st.currentPageIndex, it.id, { x, y }); 
-      setSnapLines(res.lines); 
-      return;
+      st.updateItem(st.currentPageIndex, it.id, { x, y }); setSnapLines(res.lines); return;
     }
 
-    // Modes de resize - vérification explicite de chaque mode
-    const resizeModes = ['left', 'right', 'top', 'bottom', 'topleft', 'topright', 'bottomleft', 'bottomright'] as const;
-    if (d.mode && resizeModes.includes(d.mode as any)) {
+    const __modeStr = (d as any).mode as string | null;
+    if (__modeStr && __modeStr !== 'inner-pan') {
       const fromCenter = (e.altKey || e.metaKey); // ⌥/⌘ = resize depuis le centre
-      const res = snapResizeBoxAllSides(d.startBoxCm, d.mode as any, dxCm, dyCm, d.id, d.keepRatio, fromCenter);
+      const res = snapResizeBoxAllSides(d.startBoxCm, (d.mode as any), dxCm, dyCm, d.id, d.keepRatio, fromCenter);
 
-      const minW = Math.max((it as any).minW ?? 1, 0.5);
-      const minH = Math.max((it as any).minH ?? 1, 0.5);
+      const minW = Math.max(it.minW ?? 1, 0.5);
+      const minH = Math.max(it.minH ?? 1, 0.5);
 
       let nx = Math.max(0, Math.min(size.w - minW, res.x));
       let ny = Math.max(0, Math.min(size.h - minH, res.y));
@@ -555,25 +553,10 @@ export default function EditorCanvas() {
     }
   };
 
-  /* ===== Pointer up (stage) ===== */
-  const onPointerUpStage = (e: React.PointerEvent<HTMLDivElement>) => {
-    drag.current = {
-      id: null,
-      mode: null,
-      originPx: null,
-      startBoxCm: null,
-      keepRatio: false,
-      lockAxis: null,
-      startOffsetPct: null,
-    };
+  const onPointerUpStage = () => {
+    drag.current = { id: null, mode: null, originPx: null, startBoxCm: null, keepRatio: false, lockAxis: null, startOffsetPct: null };
     setSnapLines({ v: [], h: [] });
-
-    // Relayout automatique SEULEMENT si le mode auto est activé
-    const state = useAlbumStore.getState();
-    if (state.autoLayout) {
-      const relayout = state.relayoutCurrentPage;
-      if (typeof relayout === 'function') relayout();
-    }
+    st.relayoutCurrentPage();
   };
 
   /* ===== Raccourcis ===== */
@@ -770,13 +753,13 @@ export default function EditorCanvas() {
               const isSelected = st.selectedItemId === it.id;
 
               const radius =
-                (it as any).borderRadiusMode === 'circle' ? '50%' :
-                (it as any).borderRadiusMode === 'squircle' ? '30% / 40%' :
-                `${Math.max(0, Math.min(50, (it as any).borderRadiusPct ?? 0))}%`;
+                it.borderRadiusMode === 'circle' ? '50%' :
+                it.borderRadiusMode === 'squircle' ? '30% / 40%' :
+                `${Math.max(0, Math.min(50, it.borderRadiusPct ?? 0))}%`;
 
               const boxShadow =
-                (it as any).shadow === 'soft' ? '0 4px 18px rgba(0,0,0,.14)' :
-                (it as any).shadow === 'heavy' ? '0 10px 30px rgba(0,0,0,.22)' :
+                it.shadow === 'soft' ? '0 4px 18px rgba(0,0,0,.14)' :
+                it.shadow === 'heavy' ? '0 10px 30px rgba(0,0,0,.22)' :
                 'none';
 
               const feather = Math.max(0, Math.min(40, (it as any).featherPct ?? 0));
@@ -786,12 +769,12 @@ export default function EditorCanvas() {
                 position: 'absolute',
                 left: it.x * px, top: it.y * px,
                 width: it.w * px, height: it.h * px,
-                transform: `rotate(${(it as any).rot ?? 0}deg)`,
+                transform: `rotate(${it.rot ?? 0}deg)`,
                 transformOrigin: 'center',
                 overflow: 'hidden',
                 borderRadius: radius,
                 boxShadow,
-                border: ((it as any).strokeWidth ?? 0) > 0 ? `${(it as any).strokeWidth}px solid ${(it as any).strokeColor ?? '#000'}` : undefined,
+                border: (it.strokeWidth ?? 0) > 0 ? `${it.strokeWidth}px solid ${it.strokeColor ?? '#000'}` : undefined,
                 userSelect: 'none',
                 touchAction: 'none',
                 cursor: isPanKey ? 'grab' : 'default',
@@ -800,7 +783,7 @@ export default function EditorCanvas() {
                 maskImage: maskImage as any,
               };
 
-              const asset = it.kind === 'photo' && (it as any).assetId ? st.assets.find(a => a.id === (it as any).assetId) : undefined;
+              const asset = it.kind === 'photo' && it.assetId ? st.assets.find(a => a.id === it.assetId) : undefined;
               const cropOn = isSelected && (it as any).cropActive;
 
               return (
@@ -840,14 +823,14 @@ export default function EditorCanvas() {
                       <div className="w-full h-full grid place-items-center text-[11px] text-slate-500">Image manquante</div>
                     )
                   ) : it.kind === 'text' ? (
-                    <div className="p-3 text-slate-800 text-[13px] leading-snug">{(it as any).text}</div>
+                    <div className="p-3 text-slate-800 text-[13px] leading-snug">{it.text}</div>
                   ) : null}
 
                   {/* Overlay recadrage 3×3 si actif */}
                   {cropOn && (
                     <div className="absolute inset-0 pointer-events-none"
                          style={{ background: 'linear-gradient(rgba(0,0,0,0.22), rgba(0,0,0,0.22))', mixBlendMode: 'multiply' }}>
-                      <div className="absolute inset-2 rounded-[inherit] bg-transparent ring-2 ring-white/80 shadow-[0,0,0,9999px_rgba(0,0,0,0.25)_inset]">
+                      <div className="absolute inset-2 rounded-[inherit] bg-transparent ring-2 ring-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)_inset]">
                         <div className="absolute inset-0">
                           <div className="absolute inset-y-0 left-1/3 w-px bg-white/80" />
                           <div className="absolute inset-y-0 left-2/3 w-px bg-white/80" />

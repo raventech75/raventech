@@ -16,12 +16,29 @@ const RBtn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
   />
 );
 
+function Label({ children }: { children: React.ReactNode }) {
+  return <div className="text-[11px] text-slate-600">{children}</div>;
+}
+
 export default function CanvasToolDock() {
   const st = useAlbumStore();
 
   const pageIndex = st.currentPageIndex;
   const page = st.pages[pageIndex];
-  const selectedId = st.selectedItemId;
+
+  // Id unique sélectionné (si dispo dans le store)
+  const selectedId: string | undefined = (st as any).selectedItemId ?? (st as any).selectedId;
+
+  // Liste d'IDs sélectionnés (fallback si le store n'a pas selectedIds)
+  const selectedIds: string[] = React.useMemo(() => {
+    const fromStore = (st as any).selectedIds as string[] | undefined;
+    if (Array.isArray(fromStore)) return fromStore;
+    const alt = (st as any).selected as string[] | undefined;
+    if (Array.isArray(alt)) return alt;
+    if (selectedId) return [selectedId];
+    return [];
+  }, [st, selectedId]);
+
   const item = React.useMemo(
     () => (selectedId ? page?.items.find((i) => i.id === selectedId) : undefined),
     [page, selectedId]
@@ -33,67 +50,68 @@ export default function CanvasToolDock() {
     <label className="ml-auto inline-flex items-center gap-2 text-[12px] text-slate-700">
       <input
         type="checkbox"
-        checked={st.showGrid}
-        onChange={() => st.toggleGrid()}
-        className="accent-sky-600"
+        checked={(st as any).showGrid ?? false}
+        onChange={() => (st as any).toggleGrid?.()}
+        className="h-4 w-4"
       />
-      Grille
+      <span>Grille</span>
     </label>
   );
 
-  if (!item || item.kind !== 'photo') {
+  if (!item) {
     return (
-      <div className="w-full border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-        <div className="mx-auto max-w-[1600px] px-3 sm:px-4 py-2 flex items-center gap-2">
-          <button
-            className="h-8 px-3 rounded-full border border-slate-300 text-[12px] text-slate-700 bg-white hover:bg-slate-50"
-            onClick={st.openPreview}
-            title="Aperçu des pages"
-          >
-            Aperçu
-          </button>
-          <div className="flex-1" />
+      <div className="pointer-events-auto absolute left-1/2 top-4 z-40 -translate-x-1/2">
+        <div className="flex items-center gap-3 rounded-full border border-slate-300 bg-white/95 px-3 py-2 shadow">
+          <Label>Sélectionnez un élément</Label>
           {GridToggle}
         </div>
       </div>
     );
   }
 
-  const scale = (item as any).scale ?? 1;
-  const setScale = (v: number) =>
-    st.updateSelected({ scale: Math.max(0.2, Math.min(3, v)) });
+  const isPhoto = (item as any).kind === 'photo';
+  const isText = (item as any).kind === 'text';
+  const lock = !!(item as any).lock;
+  const toggleLock = () => (st as any).updateSelected?.({ lock: !lock } as any);
 
-  const feather = Math.max(0, Math.min(40, (item as any).featherPct ?? 0));
-  const setFeather = (v: number) =>
-    st.updateSelected({ featherPct: Math.max(0, Math.min(40, v)) });
-
-  const opacityPct = Math.round(100 * Math.max(0, Math.min(1, (item as any).opacity ?? 1)));
-  const setOpacityPct = (p: number) =>
-    st.updateSelected({ opacity: Math.max(0, Math.min(1, p / 100)) });
-
-  const cropActive = !!(item as any).cropActive;
-
-  const rot = (item as any).rot ?? 0;
-  const setRot = (deg: number | ((d: number) => number)) => {
-    const val = typeof deg === 'function' ? deg(rot) : deg;
-    st.updateSelected({ rot: ((val % 360) + 360) % 360 });
-  };
+  const ratio =
+    isPhoto && (item as any).assetId && st.assets.find((a) => a.id === (item as any).assetId)?.ar
+      ? st.assets.find((a) => a.id === (item as any).assetId)!.ar!
+      : null;
 
   const lockAspect = !!(item as any).lockAspect;
-  const toggleLock = () => st.updateSelected({ lockAspect: !lockAspect } as any);
+  const toggleLockAspect = () => (st as any).updateSelected?.({ lockAspect: !lockAspect } as any);
 
-  function applyAspect(ratio: number | null) {
-    if (!ratio) return;
+  const rotate = (deg: number) => {
+    (st as any).updateSelected?.({
+      rotation: (((item as any).rotation || 0) + deg) % 360,
+    } as any);
+  };
+
+  const flipH = () => {
+    const sx = (item as any).scaleX ?? 1;
+    (st as any).updateSelected?.({ scaleX: -sx } as any);
+  };
+
+  const flipV = () => {
+    const sy = (item as any).scaleY ?? 1;
+    (st as any).updateSelected?.({ scaleY: -sy } as any);
+  };
+
+  function applyAspect(r: number | null) {
+    if (!r) return;
     const size = st.size;
+    if (!item) return;
+
     const { x, y, w, h } = item as any;
     const cx = x + w / 2;
     const cy = y + h / 2;
 
     let newW = w;
-    let newH = w / ratio;
+    let newH = w / r;
     if (newH > size.h) {
       newH = Math.min(size.h, h);
-      newW = newH * ratio;
+      newW = newH * r;
     }
 
     let nx = cx - newW / 2;
@@ -101,195 +119,177 @@ export default function CanvasToolDock() {
     nx = Math.max(0, Math.min(size.w - newW, nx));
     ny = Math.max(0, Math.min(size.h - newH, ny));
 
-    st.updateSelected({ x: nx, y: ny, w: newW, h: newH });
+    (st as any).updateSelected?.({
+      x: nx,
+      y: ny,
+      w: newW,
+      h: newH,
+      lockAspect: true,
+    } as any);
   }
 
-  const setOffset = (xPct: number, yPct: number) =>
-    st.updateSelected({ offsetXpct: xPct, offsetYpct: yPct } as any);
+  const align = (how: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+    const s = st.size;
+    const it = item as any;
+    let nx = it.x;
+    let ny = it.y;
+
+    if (how === 'left') nx = 0;
+    if (how === 'center') nx = Math.round((s.w - it.w) / 2);
+    if (how === 'right') nx = Math.max(0, s.w - it.w);
+
+    if (how === 'top') ny = 0;
+    if (how === 'middle') ny = Math.round((s.h - it.h) / 2);
+    if (how === 'bottom') ny = Math.max(0, s.h - it.h);
+
+    (st as any).updateSelected?.({ x: nx, y: ny } as any);
+  };
+
+  const distribute = (axis: 'h' | 'v') => {
+    // ✅ utilise selectedIds si présent, sinon fallback (calculé plus haut)
+    const items = page.items.filter((i: any) => selectedIds.includes(i.id));
+    if (!items || items.length < 3) return;
+
+    const sorted =
+      axis === 'h' ? [...items].sort((a, b) => a.x - b.x) : [...items].sort((a, b) => a.y - b.y);
+
+    const totalSpan =
+      axis === 'h'
+        ? sorted[sorted.length - 1].x - sorted[0].x + sorted[sorted.length - 1].w - sorted[0].w
+        : sorted[sorted.length - 1].y - sorted[0].y + sorted[sorted.length - 1].h - sorted[0].h;
+
+    const occupied =
+      axis === 'h'
+        ? sorted.reduce((acc, i) => acc + i.w, 0)
+        : sorted.reduce((acc, i) => acc + i.h, 0);
+
+    const gaps = sorted.length - 1;
+    const space = Math.max(0, totalSpan - occupied);
+    const gapSize = Math.floor(space / gaps);
+
+    let cursor = axis === 'h' ? sorted[0].x + sorted[0].w : sorted[0].y + sorted[0].h;
+    for (let i = 1; i < sorted.length - 1; i++) {
+      if (axis === 'h') {
+        sorted[i].x = cursor + gapSize;
+        cursor = sorted[i].x + sorted[i].w;
+      } else {
+        sorted[i].y = cursor + gapSize;
+        cursor = sorted[i].y + sorted[i].h;
+      }
+    }
+    (st as any).touch?.();
+  };
+
+  const nudge = (dx: number, dy: number) => {
+    const it = item as any;
+    (st as any).updateSelected?.({ x: it.x + dx, y: it.y + dy } as any);
+  };
+
+  const duplicate = () => {
+    const it = item as any;
+    const id =
+      typeof crypto !== 'undefined' && (crypto as any).randomUUID
+        ? (crypto as any).randomUUID()
+        : 'id_' + Math.random().toString(36).slice(2, 10);
+
+    const copy = { ...it, id, x: it.x + 10, y: it.y + 10 };
+    page.items.push(copy);
+    (st as any).setSelected?.([id]);
+    (st as any).touch?.();
+  };
+
+  const remove = () => {
+    const ids = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
+    if (!ids.length) return;
+    page.items = page.items.filter((i: any) => !ids.includes(i.id));
+    (st as any).setSelected?.([]);
+    (st as any).touch?.();
+  };
 
   return (
-    <div className="w-full border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-      <div className="mx-auto max-w-[1600px] px-3 sm:px-4 py-2">
-        <div className="flex flex-wrap items-center gap-2" onPointerDown={stop} onClick={stop}>
-          {/* Aperçu */}
-          <button
-            className="h-8 px-3 rounded-full border border-slate-300 text-[12px] text-slate-700 bg-white hover:bg-slate-50"
-            onClick={st.openPreview}
-            title="Aperçu des pages"
-          >
-            Aperçu
-          </button>
+    <div
+      className="pointer-events-auto absolute left-1/2 top-4 z-40 -translate-x-1/2"
+      onMouseDown={stop}
+      onPointerDown={stop}
+    >
+      <div className="flex items-center gap-3 rounded-full border border-slate-300 bg-white/95 px-3 py-2 shadow">
+        {/* Verrou */}
+        <button
+          onClick={toggleLock}
+          title={lock ? 'Déverrouiller' : 'Verrouiller'}
+          className={
+            'h-7 rounded-full border border-slate-300 px-3 text-[12px] ' +
+            (lock ? 'bg-slate-800 text-white' : 'bg-white text-slate-700 hover:bg-slate-50')
+          }
+        >
+          {lock ? 'Verrouillé' : 'Verrouiller'}
+        </button>
 
-          {/* Plan */}
-          <div className="flex items-center gap-1">
-            <RBtn title="Tout devant" onClick={() => st.bringToFront(pageIndex, item.id)}>⤴</RBtn>
-            <RBtn title="Monter d'un plan" onClick={() => st.bringForward(pageIndex, item.id)}>＋</RBtn>
-            <RBtn title="Descendre d'un plan" onClick={() => st.sendBackward(pageIndex, item.id)}>－</RBtn>
-            <RBtn title="Tout derrière" onClick={() => st.sendToBack(pageIndex, item.id)}>⤵</RBtn>
-          </div>
-
-          <span className="mx-1 h-5 w-px bg-slate-200" />
-
-          {/* Zoom interne */}
-          <div className="flex items-center gap-1">
-            <RBtn title="Zoom −" onClick={() => setScale(scale - 0.1)}>−</RBtn>
-            <label className="flex items-center gap-2 text-[12px] text-slate-600">
-              <span className="hidden sm:inline">Zoom</span>
-              <input
-                type="range"
-                min={0.2}
-                max={3}
-                step={0.01}
-                value={scale}
-                onChange={(e) => setScale(parseFloat(e.target.value))}
-                className="w-28 sm:w-36 accent-sky-600"
-              />
-            </label>
-            <RBtn title="Zoom +" onClick={() => setScale(scale + 0.1)}>+</RBtn>
-            <button
-              className="h-7 px-3 rounded-full border border-slate-300 text-[12px] text-slate-700 hover:bg-slate-50"
-              title="Remettre à 100%"
-              onClick={() => setScale(1)}
-            >
-              100%
-            </button>
-          </div>
-
-          <span className="mx-1 h-5 w-px bg-slate-200" />
-
-          {/* Toggle Auto Layout */}
-<button
-  className={`h-8 px-3 rounded-full border text-[12px] ${
-    st.autoLayout 
-      ? 'bg-green-50 border-green-300 text-green-700' 
-      : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-  }`}
-  onClick={st.toggleAutoLayout}
-  title={st.autoLayout ? "Désactiver le placement automatique" : "Activer le placement automatique"}
->
-  {st.autoLayout ? 'Auto: ON' : 'Auto: OFF'}
-</button>
-
-          {/* Recadrage / ratio */}
-          <div className="flex items-center gap-2">
-            <button
-              className={`h-7 px-3 rounded-full border text-[12px] ${
-                cropActive ? 'bg-sky-50 border-sky-300 text-sky-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
-              title="Mode recadrage (Alt+glisser dans l'image, ou glisser directement quand activé)"
-              onClick={() => st.updateSelected({ cropActive: !cropActive } as any)}
-            >
-              {cropActive ? 'Recadrage : ON' : 'Recadrage'}
-            </button>
-
-            <select
-              className="h-7 rounded-full border border-slate-300 text-[12px] px-2 text-slate-700 bg-white"
-              defaultValue="free"
-              title="Ratio du cadre"
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === 'free') return;
-                const [a, b] = v.split(':').map(Number);
-                if (a > 0 && b > 0) applyAspect(a / b);
-              }}
-            >
-              <option value="free">Ratio : Libre</option>
-              <option value="1:1">1:1</option>
-              <option value="3:2">3:2</option>
-              <option value="2:3">2:3</option>
-              <option value="4:3">4:3</option>
-              <option value="16:9">16:9</option>
-            </select>
-
-            <button
-              className={`h-7 px-3 rounded-full border text-[12px] ${
-                lockAspect ? 'bg-violet-50 border-violet-300 text-violet-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
-              title="Verrouiller le ratio du cadre (redimensionnement proportionnel)"
-              onClick={() => toggleLock()}
-            >
-              Ratio verrouillé
-            </button>
-          </div>
-
-          <span className="mx-1 h-5 w-px bg-slate-200" />
-
-          {/* Presets offset */}
-          <div className="hidden md:flex items-center gap-1" title="Position de l'image dans le cadre">
-            <RBtn onClick={() => setOffset(-25, 0)}>←</RBtn>
-            <RBtn onClick={() => setOffset(0, 0)}>•</RBtn>
-            <RBtn onClick={() => setOffset(25, 0)}>→</RBtn>
-            <RBtn onClick={() => setOffset(0, -25)}>↑</RBtn>
-            <RBtn onClick={() => setOffset(0, 25)}>↓</RBtn>
-          </div>
-
-          <span className="mx-1 h-5 w-px bg-slate-200" />
-
-          {/* Rotation */}
-          <div className="flex items-center gap-1" title="Rotation">
-            <RBtn onClick={() => setRot((r) => r - 1)}>−1°</RBtn>
-            <label className="flex items-center gap-2 text-[12px] text-slate-600">
-              <span className="hidden sm:inline">Rot.</span>
-              <input
-                type="range"
-                min={0}
-                max={360}
-                step={1}
-                value={(item as any).rot ?? 0}
-                onChange={(e) => setRot(parseInt(e.target.value, 10))}
-                className="w-28 sm:w-36 accent-sky-600"
-              />
-            </label>
-            <RBtn onClick={() => setRot((r) => r + 1)}>+1°</RBtn>
-            <button
-              className="h-7 px-3 rounded-full border border-slate-300 text-[12px] text-slate-700 hover:bg-slate-50"
-              onClick={() => setRot(0)}
-            >
-              0°
-            </button>
-          </div>
-
-          <span className="mx-1 h-5 w-px bg-slate-200" />
-
-          {/* Fondu */}
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-slate-600">Fondu</span>
-            <input
-              type="range"
-              min={0}
-              max={40}
-              step={1}
-              value={feather}
-              onChange={(e) => setFeather(parseInt(e.target.value, 10))}
-              className="w-28 sm:w-36 accent-sky-600"
-            />
-            <span className="text-[12px] tabular-nums w-10 text-right text-slate-700">
-              {feather}%
-            </span>
-          </div>
-
-          <span className="mx-1 h-5 w-px bg-slate-200" />
-
-          {/* Opacité */}
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-slate-600">Opacité</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={opacityPct}
-              onChange={(e) => setOpacityPct(parseInt(e.target.value, 10))}
-              className="w-28 sm:w-36 accent-sky-600"
-            />
-            <span className="text-[12px] tabular-nums w-10 text-right text-slate-700">
-              {opacityPct}%
-            </span>
-          </div>
-
-          <div className="flex-1" />
-          {GridToggle}
+        {/* Alignements */}
+        <div className="flex items-center gap-1">
+          <Label>Aligner</Label>
+          <RBtn onClick={() => align('left')} title="Gauche">⟸</RBtn>
+          <RBtn onClick={() => align('center')} title="Centre">━</RBtn>
+          <RBtn onClick={() => align('right')} title="Droite">⟹</RBtn>
+          <RBtn onClick={() => align('top')} title="Haut">⟰</RBtn>
+          <RBtn onClick={() => align('middle')} title="Milieu">┃</RBtn>
+          <RBtn onClick={() => align('bottom')} title="Bas">⟱</RBtn>
         </div>
+
+        {/* Distribution */}
+        <div className="flex items-center gap-1">
+          <Label>Distribuer</Label>
+          <RBtn onClick={() => distribute('h')} title="Horizontal">≋</RBtn>
+          <RBtn onClick={() => distribute('v')} title="Vertical">║</RBtn>
+        </div>
+
+        {/* Déplacement fin */}
+        <div className="flex items-center gap-1">
+          <Label>Déplacer</Label>
+          <RBtn onClick={() => nudge(-1, 0)} title="Gauche">←</RBtn>
+          <RBtn onClick={() => nudge(1, 0)} title="Droite">→</RBtn>
+          <RBtn onClick={() => nudge(0, -1)} title="Haut">↑</RBtn>
+          <RBtn onClick={() => nudge(0, 1)} title="Bas">↓</RBtn>
+        </div>
+
+        {/* Rotation */}
+        <div className="flex items-center gap-1">
+          <Label>Rotation</Label>
+          <RBtn onClick={() => rotate(-90)} title="-90°">⟲</RBtn>
+          <RBtn onClick={() => rotate(90)} title="+90°">⟳</RBtn>
+        </div>
+
+        {/* Miroir */}
+        <div className="flex items-center gap-1">
+          <Label>Miroir</Label>
+          <RBtn onClick={flipH} title="Horizontal">⇋</RBtn>
+          <RBtn onClick={flipV} title="Vertical">⇵</RBtn>
+        </div>
+
+        {/* Ratio / verrouillage */}
+        {(isPhoto || isText) && (
+          <div className="flex items-center gap-1">
+            <Label>Ratio</Label>
+            <RBtn onClick={() => applyAspect(ratio)} title="Ratio image">AR</RBtn>
+            <RBtn onClick={() => applyAspect(1)} title="1:1">1:1</RBtn>
+            <RBtn onClick={() => applyAspect(3 / 2)} title="3:2">3:2</RBtn>
+            <RBtn onClick={() => applyAspect(4 / 3)} title="4:3">4:3</RBtn>
+            <RBtn onClick={() => applyAspect(16 / 9)} title="16:9">16:9</RBtn>
+
+            <button
+              onClick={toggleLockAspect}
+              title={lockAspect ? 'Déverrouiller ratio' : 'Verrouiller ratio'}
+              className={
+                'ml-2 h-7 rounded-full border border-slate-300 px-3 text-[12px] ' +
+                (lockAspect ? 'bg-slate-800 text-white' : 'bg-white text-slate-700 hover:bg-slate-50')
+              }
+            >
+              {lockAspect ? 'Ratio verrouillé' : 'Verrouiller ratio'}
+            </button>
+          </div>
+        )}
+
+        {GridToggle}
       </div>
     </div>
   );
