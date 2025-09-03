@@ -1,4 +1,3 @@
-// app/page.tsx
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -10,11 +9,11 @@ export default async function Page() {
     data: { session },
   } = await supabase.auth.getSession();
 
-  // Si pas connecté → redirige vers /sign-in
+  // Si pas connecté → /sign-in
   if (!session) {
     redirect('/sign-in');
   }
 
-  // ✅ Si connecté → affiche ton éditeur comme avant
+  // ✅ Si connecté → affiche directement l'éditeur
   return <EditorLayout />;
 }
