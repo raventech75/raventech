@@ -687,12 +687,14 @@ export const useAlbumStore = create<Store>((set, get) => ({
     const pg = pages[pgIndex]; 
     if (!pg) return;
 
-    // on insère l'item puis on relayout toutes les photos
+    // on insère l'item puis on relayout toutes les photos SEULEMENT si auto mode activé
     const id = (crypto as any)?.randomUUID ? (crypto as any).randomUUID() : 'it_' + Math.random().toString(36).slice(2);
     const maxZ = Math.max(0, ...pg.items.map(i => i.z ?? 0));
     const newItem: Item = {
       id, kind: 'photo', assetId,
-      x: 0, y: 0, w: 4, h: 4,
+      x: st.autoLayout ? 0 : 2, // si mode manuel, place à 2,2 cm
+      y: st.autoLayout ? 0 : 2,
+      w: 4, h: 4,
       z: maxZ + 1, scale: 1, rot: 0, opacity: 1,
       borderRadiusMode: 'rounded', borderRadiusPct: 0,
       strokeWidth: 0, strokeColor: '#000000', shadow: 'none',
@@ -702,9 +704,15 @@ export const useAlbumStore = create<Store>((set, get) => ({
     pushHistory(get, set);
 
     const withNew = { ...pg, items: [...pg.items, newItem] };
-    const relayout = relayoutPhotosFullCover(withNew, st.size, st.marginsCm, st.assets);
+    
+    // Relayout SEULEMENT si mode auto activé
+    if (st.autoLayout) {
+      const relayout = relayoutPhotosFullCover(withNew, st.size, st.marginsCm, st.assets);
+      pages[pgIndex] = { ...withNew, items: relayout };
+    } else {
+      pages[pgIndex] = withNew;
+    }
 
-    pages[pgIndex] = { ...withNew, items: relayout };
     set({ pages, selectedItemId: id });
   },
 }));

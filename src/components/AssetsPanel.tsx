@@ -138,29 +138,32 @@ function AssetCard({ assetId }: { assetId: string }) {
   const inUse = st.pages[st.currentPageIndex]?.items.some((i) => i.kind === 'photo' && i.assetId === assetId);
 
   const addToPage = () => {
-    // Positionne un cadre 6x4 cm en haut-gauche avec AR de l'image
-    const p = st.pages[st.currentPageIndex];
-    const id = Math.random().toString(36).slice(2);
-    const w = 6;
-    const h = asset.ar ? w / asset.ar : 4;
-    
-    // Convertir cm en pixels (approximation : 1 cm ≈ 37.8 px)
-    const pixelRatio = 37.8;
-    const ph = {
-      id,
-      kind: 'photo' as const,
-      x: 1 * pixelRatio, // 1 cm converti en pixels
-      y: 1 * pixelRatio, // 1 cm converti en pixels
-      width: w * pixelRatio, // 6 cm converti en pixels
-      height: h * pixelRatio, // hauteur calculée convertie en pixels
-      opacity: 1,
-      rotation: 0,
-      assetId,
-    };
-    
-    p.items.push(ph as any);
-    st.selectedItemId = id;
+  const p = st.pages[st.currentPageIndex];
+  const id = Math.random().toString(36).slice(2);
+  
+  // En mode manuel, place à une position fixe
+  // En mode auto, laisse à (0,0) pour le relayout automatique
+  const ph = {
+    id,
+    kind: 'photo' as const,
+    x: st.autoLayout ? 0 : 2,  // 2cm du bord si manuel
+    y: st.autoLayout ? 0 : 2,  // 2cm du bord si manuel
+    width: 220,
+    height: 160,
+    opacity: 1,
+    rotation: 0,
+    assetId,
   };
+  
+  p.items.push(ph as any);
+  
+  // Relayout automatique SEULEMENT si mode auto
+  if (st.autoLayout) {
+    st.relayoutCurrentPage();
+  }
+  
+  st.selectedItemId = id;
+};
 
   const removeAsset = () => {
     if (!confirm('Supprimer cette image de vos imports ? (ne supprime pas les éléments déjà placés)')) return;

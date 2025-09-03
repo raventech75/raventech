@@ -568,9 +568,12 @@ export default function EditorCanvas() {
     };
     setSnapLines({ v: [], h: [] });
 
-    // Optionnel : relayout automatique complet pour garder la couverture
-    const relayout = useAlbumStore.getState().relayoutCurrentPage;
-    if (typeof relayout === 'function') relayout();
+    // Relayout automatique SEULEMENT si le mode auto est activé
+    const state = useAlbumStore.getState();
+    if (state.autoLayout) {
+      const relayout = state.relayoutCurrentPage;
+      if (typeof relayout === 'function') relayout();
+    }
   };
 
   /* ===== Raccourcis ===== */

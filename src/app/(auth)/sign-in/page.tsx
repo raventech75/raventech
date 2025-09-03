@@ -3,7 +3,7 @@
 import React, { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabaseBrowser } from '@/lib/supabase/Browser';
+import { supabaseBrowser } from '@/lib/supabase/browser';
 
 
 // (optionnel) forcer dynamique si tu préfères

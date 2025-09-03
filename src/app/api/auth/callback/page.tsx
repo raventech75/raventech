@@ -1,7 +1,7 @@
 'use client';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { supabaseBrowser } from '@/lib/supabase/Browser';
+import { supabaseBrowser } from '@/lib/supabase/browser';
 
 function Inner() {
   const params = useSearchParams();

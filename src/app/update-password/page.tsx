@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { supabaseBrowser } from '@/lib/supabase/Browser';
+import { supabaseBrowser } from '@/lib/supabase/browser';
 
 export default function UpdatePasswordPage() {
   const [pwd, setPwd] = React.useState('');

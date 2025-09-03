@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useAlbumStore } from '@/store/useAlbumStore';
 // Essayez d'abord cette variante (avec une minuscule)
-import { supabaseBrowser } from '@/lib/supabase/Browser';
+import { supabaseBrowser } from '@/lib/supabase/browser';
 // Si ça ne marche pas, essayez celle-ci :
 // import { supabaseBrowser } from '@/lib/supabase/client';
 // Ou encore celle-ci :
