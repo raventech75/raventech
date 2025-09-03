@@ -48,7 +48,7 @@ export default function SignUpPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?redirect=/editor`,
+          emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?redirect=/`,
           data: { full_name: name },
         },
       });

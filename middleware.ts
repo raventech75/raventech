@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 export const config = {
   // protège l'éditeur et la racine
-  matcher: ["/", "/editor", "/projects/:path*"],
+  matcher: ["/", "/projects/:path*"],
 };
 
 export function middleware(req: NextRequest) {
