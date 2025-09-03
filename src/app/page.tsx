@@ -12,7 +12,7 @@ export default async function Page() {
 
   // Si pas connecté → /sign-in
   if (!session) {
-    redirect('/sign-in');
+    redirect('/');
   }
 
   // ✅ Si connecté → affiche directement l'éditeur
