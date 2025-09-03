@@ -26,10 +26,10 @@ export function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/sign-in", req.url));
     }
     // connecté -> éditeur
-    return NextResponse.redirect(new URL("/editor", req.url));
+    return NextResponse.redirect(new URL("/", req.url));
   }
 
-  // 2) Toute page protégée (ex: /editor)
+  // 2) Toute page protégée (ex: /)
   if (!isAuthed) {
     const url = new URL("/sign-in", req.url);
     url.searchParams.set("redirect", pathname + (search || ""));
