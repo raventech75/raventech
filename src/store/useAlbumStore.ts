@@ -181,6 +181,14 @@ type Store = {
 
   // (optionnel) exposer push history si besoin
   // pushHistory?: () => void;
+
+  // compat sélection (pour anciens composants)
+  setSelected?: (ids: string[]) => void;
+  setSelectedIds?: (ids: string[]) => void;
+  setSelectedId?: (id: string) => void;
+
+  // ajout direct d'une photo sur la page courante
+  addPhotoOnPage?: (args: { assetId: string; x: number; y: number; w: number; h: number }) => void;
 };
 
 /* ========= Formats d’album (fermé) -> canvas ouvert ========= */
@@ -419,6 +427,31 @@ export const useAlbumStore = create<Store>((set, get) => ({
   removeAsset: (id) => set((s) => ({ assets: s.assets.filter((x) => x.id !== id) })),
 
   /* ===== items ===== */
+  // compat: ajout direct d'une photo à la page courante
+  addPhotoOnPage: ({ assetId, x, y, w, h }) => {
+    pushHistory(get, set);
+    const s = get();
+    const pages = s.pages.map((p, i) => {
+      if (i !== s.currentPageIndex) return p;
+      const id = Math.random().toString(36).slice(2);
+      const photo: Item = {
+        id,
+        kind: 'photo',
+        x, y, w, h,
+        rotation: 0,
+        opacity: 1,
+        assetId,
+        lockAspect: true,
+      } as any;
+      return { ...p, items: [...p.items, photo] };
+    });
+    set({ pages, selectedItemId: undefined });
+    // on sélectionne le dernier ajouté
+    const newPg = pages[s.currentPageIndex];
+    const lastId = newPg?.items[newPg.items.length - 1]?.id;
+    if (lastId) set({ selectedItemId: lastId });
+  },
+
   updateItem: (pageIndex, itemId, patch) => {
     pushHistory(get, set);
     const pages = get().pages.map((p, i) => {
@@ -438,6 +471,12 @@ export const useAlbumStore = create<Store>((set, get) => ({
   },
 
   /* ===== sélection & ordre ===== */
+  // compat: anciennes APIs
+  setSelected: (ids) => set({ selectedItemId: ids && ids.length ? ids[0] : undefined }),
+  setSelectedIds: (ids) => set({ selectedItemId: ids && ids.length ? ids[0] : undefined }),
+  setSelectedId: (id) => set({ selectedItemId: id }),
+
+
   selectItem: (_pi, itemId) => set({ selectedItemId: itemId }),
 
   updateSelected: (patch) => {
@@ -553,72 +592,130 @@ export const useAlbumStore = create<Store>((set, get) => ({
   setMargins: (m) => set((s) => ({ marginsCm: { ...s.marginsCm, ...m } })),
 
   /* ===== export ===== */
-  exportJpeg: async ({ all = false, quality = 0.92 } = {}) => {
-    const s = get();
-    if (s.ui.exporting) return;
-    set({ ui: { ...s.ui, exporting: true } });
-    try {
-      const pages = all ? s.pages : [s.pages[s.currentPageIndex]];
-      const pxW = Math.round((s.size.w / 2.54) * s.dpi);
-      const pxH = Math.round((s.size.h / 2.54) * s.dpi);
+exportJpeg: async ({ 
+  all = false, 
+  quality = 0.92, 
+  pages: specificPages 
+}: { 
+  all?: boolean; 
+  quality?: number; 
+  pages?: number[]; 
+} = {}) => {
+  const s = get();
+  if (s.ui.exporting) return;
+  
+  set({ ui: { ...s.ui, exporting: true } });
+  
+  try {
+    // Déterminer quelles pages exporter
+    let pagesToExport: Page[];
+    if (specificPages && Array.isArray(specificPages)) {
+      // Export de pages spécifiques (par index)
+      pagesToExport = specificPages.map(index => s.pages[index]).filter(Boolean);
+    } else if (all) {
+      // Export de toutes les pages
+      pagesToExport = s.pages;
+    } else {
+      // Export de la page courante uniquement
+      pagesToExport = [s.pages[s.currentPageIndex]];
+    }
 
-      for (const page of pages) {
-        const canvas = document.createElement('canvas');
-        canvas.width = pxW; canvas.height = pxH;
-        const ctx = canvas.getContext('2d')!;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, pxW, pxH);
+    const pxW = Math.round((s.size.w / 2.54) * s.dpi);
+    const pxH = Math.round((s.size.h / 2.54) * s.dpi);
 
-        await renderBackgroundToCanvas(ctx, page.background, pxW, pxH, s.assets);
+    for (let i = 0; i < pagesToExport.length; i++) {
+      const page = pagesToExport[i];
+      if (!page) continue;
 
-        // items (photos + textes)
-        for (const it of [...page.items].sort((a,b)=>(a.z??0)-(b.z??0))) {
-          const x = Math.round((it.x / 2.54) * s.dpi);
-          const y = Math.round((it.y / 2.54) * s.dpi);
-          const w = Math.round((it.w / 2.54) * s.dpi);
-          const h = Math.round((it.h / 2.54) * s.dpi);
+      // Créer le canvas d'export
+      const canvas = document.createElement('canvas');
+      canvas.width = pxW;
+      canvas.height = pxH;
+      const ctx = canvas.getContext('2d')!;
 
-          ctx.save();
-          if (it.rot) {
-            ctx.translate(x + w / 2, y + h / 2);
-            ctx.rotate((it.rot * Math.PI) / 180);
-            ctx.translate(-(x + w / 2), -(y + h / 2));
-          }
-          ctx.globalAlpha = it.opacity ?? 1;
+      // ✅ ÉTAPE CRITIQUE : Rendu du fond de page
+      await renderBackgroundToCanvas(ctx, page.background, pxW, pxH, s.assets);
 
-          if (it.kind === 'photo' && it.assetId) {
-            const asset = s.assets.find((a) => a.id === it.assetId);
-            if (asset) {
+      // Rendu des éléments (photos + textes)
+      const sortedItems = [...page.items].sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+      
+      for (const item of sortedItems) {
+        const x = Math.round((item.x / 2.54) * s.dpi);
+        const y = Math.round((item.y / 2.54) * s.dpi);
+        const w = Math.round((item.w / 2.54) * s.dpi);
+        const h = Math.round((item.h / 2.54) * s.dpi);
+
+        ctx.save();
+        
+        // Rotation
+        if (item.rot) {
+          ctx.translate(x + w / 2, y + h / 2);
+          ctx.rotate((item.rot * Math.PI) / 180);
+          ctx.translate(-(x + w / 2), -(y + h / 2));
+        }
+        
+        // Opacité
+        ctx.globalAlpha = item.opacity ?? 1;
+
+        if (item.kind === 'photo' && item.assetId) {
+          const asset = s.assets.find((a) => a.id === item.assetId);
+          if (asset) {
+            try {
               const img = await loadImage(asset.url);
               drawCoverContain(
                 ctx, img, x, y, w, h,
-                'cover',
-                it.scale ?? 1,
-                { x: it.offsetXpct ?? 0, y: it.offsetYpct ?? 0 },
-                it.opacity ?? 1
+                'contain', // ✅ Utiliser 'contain' pour préserver l'homothétie
+                (item as any).scale ?? 1,
+                { 
+                  x: (item as any).offsetXpct ?? 0, 
+                  y: (item as any).offsetYpct ?? 0 
+                },
+                item.opacity ?? 1
               );
+            } catch (error) {
+              console.warn('Erreur chargement image:', error);
+              // Dessiner un placeholder en cas d'erreur
+              ctx.fillStyle = '#f3f4f6';
+              ctx.fillRect(x, y, w, h);
+              ctx.fillStyle = '#6b7280';
+              ctx.font = `${Math.min(w, h) / 8}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText('Image manquante', x + w / 2, y + h / 2);
             }
-          } else if (it.kind === 'text' && it.text) {
-            ctx.fillStyle = '#111827';
-            const fs = Math.round((it.fontSize ?? 14) * (s.dpi / 96));
-            const lh = Math.round(1.3 * fs);
-            ctx.font = `${fs}px sans-serif`;
-            ctx.textBaseline = 'top';
-            wrapAndFillText(ctx, it.text, x, y, w, lh);
           }
-          ctx.restore();
+        } else if (item.kind === 'text' && item.text) {
+          ctx.fillStyle = '#111827';
+          const fontSize = Math.round((item.fontSize ?? 14) * (s.dpi / 96));
+          const lineHeight = Math.round(1.3 * fontSize);
+          ctx.font = `${fontSize}px sans-serif`;
+          ctx.textBaseline = 'top';
+          wrapAndFillText(ctx, item.text, x + 8, y + 8, w - 16, lineHeight);
         }
-
-        const data = canvas.toDataURL('image/jpeg', quality);
-        const link = document.createElement('a');
-        link.href = data;
-        link.download = `album_p${(page.index + 1).toString().padStart(2, '0')}_300dpi.jpg`;
-        link.click();
+        
+        ctx.restore();
       }
-    } finally {
-      set({ ui: { ...get().ui, exporting: false } });
+
+      // Télécharger l'image
+      const dataURL = canvas.toDataURL('image/jpeg', quality);
+      const link = document.createElement('a');
+      const pageNumber = all || specificPages ? page.index + 1 : s.currentPageIndex + 1;
+      link.href = dataURL;
+      link.download = `album_page_${pageNumber.toString().padStart(2, '0')}_${s.dpi}dpi.jpg`;
+      link.click();
+      
+      // Petite pause entre les exports pour éviter de bloquer le navigateur
+      if (i < pagesToExport.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
     }
-  },
+  } catch (error) {
+    console.error('Erreur lors de l\'export:', error);
+    alert('Erreur lors de l\'export. Vérifiez la console pour plus de détails.');
+  } finally {
+    set({ ui: { ...get().ui, exporting: false } });
+  }
+},
 
   /* ===== navigation ===== */
   nextPage: () => set((s) => ({ currentPageIndex: Math.min(s.currentPageIndex + 1, s.pages.length - 1) })),
@@ -715,11 +812,11 @@ export const useAlbumStore = create<Store>((set, get) => ({
 /* ========= Utils (canvas export) ========= */
 
 function loadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((res, rej) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => res(img);
-    img.onerror = rej;
+    img.onload = () => resolve(img);
+    img.onerror = (error) => reject(new Error(`Impossible de charger l'image: ${url}`));
     img.src = url;
   });
 }
@@ -733,164 +830,334 @@ function drawCoverContain(
   offsetPct: { x: number; y: number } = { x: 0, y: 0 },
   opacity: number = 1
 ) {
-  const iw = img.width, ih = img.height;
-  const ir = iw / ih; const tr = w / h;
-  let dw = w, dh = h, dx = x, dy = y;
+  const imgWidth = img.width;
+  const imgHeight = img.height;
+  const imgRatio = imgWidth / imgHeight;
+  const targetRatio = w / h;
+  
+  let drawW = w;
+  let drawH = h;
+  let drawX = x;
+  let drawY = y;
 
   if (fit === 'cover') {
-    if (ir > tr) { dh = h; dw = h * ir; dx = x - (dw - w) / 2; }
-    else { dw = w; dh = w / ir; dy = y - (dh - h) / 2; }
-  } else {
-    if (ir > tr) { dw = w; dh = w / ir; dy = y + (h - dh) / 2; }
-    else { dh = h; dw = h * ir; dx = x + (w - dw) / 2; }
+    if (imgRatio > targetRatio) {
+      drawH = h;
+      drawW = h * imgRatio;
+      drawX = x - (drawW - w) / 2;
+    } else {
+      drawW = w;
+      drawH = w / imgRatio;
+      drawY = y - (drawH - h) / 2;
+    }
+  } else { // contain
+    if (imgRatio > targetRatio) {
+      drawW = w;
+      drawH = w / imgRatio;
+      drawY = y + (h - drawH) / 2;
+    } else {
+      drawH = h;
+      drawW = h * imgRatio;
+      drawX = x + (w - drawW) / 2;
+    }
   }
 
-  const cx = x + w / 2, cy = y + h / 2;
+  // Appliquer l'échelle supplémentaire
+  const centerX = x + w / 2;
+  const centerY = y + h / 2;
+  
   ctx.save();
   ctx.globalAlpha = opacity;
-  ctx.translate(cx, cy);
+  
+  // Transformer depuis le centre
+  ctx.translate(centerX, centerY);
   ctx.scale(scaleExtra, scaleExtra);
-  ctx.translate(-cx, -cy);
+  ctx.translate(-centerX, -centerY);
 
-  dx += (offsetPct.x / 100) * (w / 2);
-  dy += (offsetPct.y / 100) * (h / 2);
+  // Appliquer les offsets (en pourcentage de la taille du conteneur)
+  drawX += (offsetPct.x / 100) * (w / 2);
+  drawY += (offsetPct.y / 100) * (h / 2);
 
-  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.drawImage(img, drawX, drawY, drawW, drawH);
   ctx.restore();
 }
 
-function wrapAndFillText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lineH: number) {
+function wrapAndFillText(
+  ctx: CanvasRenderingContext2D, 
+  text: string, 
+  x: number, 
+  y: number, 
+  maxWidth: number, 
+  lineHeight: number
+) {
   const words = text.split(/\s+/);
-  let line = '', ty = y;
-  for (const w of words) {
-    const test = line ? line + ' ' + w : w;
-    if (ctx.measureText(test).width > maxW && line) {
-      ctx.fillText(line, x, ty); ty += lineH; line = w;
-    } else { line = test; }
+  let line = '';
+  let currentY = y;
+
+  for (const word of words) {
+    const testLine = line ? line + ' ' + word : word;
+    const metrics = ctx.measureText(testLine);
+    
+    if (metrics.width > maxWidth && line) {
+      ctx.fillText(line, x, currentY);
+      currentY += lineHeight;
+      line = word;
+    } else {
+      line = testLine;
+    }
   }
-  if (line) ctx.fillText(line, x, ty);
+  
+  if (line) {
+    ctx.fillText(line, x, currentY);
+  }
 }
 
 /* ---- Export: rendu du background ---- */
 async function renderBackgroundToCanvas(
   ctx: CanvasRenderingContext2D,
   bg: PageBackground,
-  pxW: number, pxH: number,
+  pxW: number, 
+  pxH: number,
   assets: Asset[]
 ) {
-  if (bg.kind === 'solid' && bg.solid) {
-    ctx.fillStyle = bg.solid.color;
-    ctx.fillRect(0, 0, pxW, pxH);
+  switch (bg.kind) {
+    case 'solid':
+      if (bg.solid?.color) {
+        ctx.fillStyle = bg.solid.color;
+        ctx.fillRect(0, 0, pxW, pxH);
+      } else {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, pxW, pxH);
+      }
+      break;
+
+    case 'linear':
+      if (bg.linear) {
+        const angle = ((bg.linear.angle || 90) % 360 + 360) % 360;
+        const rad = (angle * Math.PI) / 180;
+        const half = Math.max(pxW, pxH);
+        const cx = pxW / 2, cy = pxH / 2;
+        const x0 = cx - Math.cos(rad) * half;
+        const y0 = cy - Math.sin(rad) * half;
+        const x1 = cx + Math.cos(rad) * half;
+        const y1 = cy + Math.sin(rad) * half;
+        
+        const gradient = ctx.createLinearGradient(x0, y0, x1, y1);
+        gradient.addColorStop(0, bg.linear.from || '#FFFFFF');
+        gradient.addColorStop(1, bg.linear.to || '#F8FAFC');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, pxW, pxH);
+      } else {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, pxW, pxH);
+      }
+      break;
+
+    case 'radial':
+      if (bg.radial) {
+        const radius = Math.hypot(pxW, pxH) / 2;
+        const gradient = ctx.createRadialGradient(
+          pxW / 2, pxH / 2, 0,
+          pxW / 2, pxH / 2, radius
+        );
+        gradient.addColorStop(0, bg.radial.inner || '#FFFFFF');
+        gradient.addColorStop(1, bg.radial.outer || '#F1F5F9');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, pxW, pxH);
+      } else {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, pxW, pxH);
+      }
+      break;
+
+    default:
+      // Pour 'none', 'image', 'text' - fond blanc par défaut
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, pxW, pxH);
+      break;
   }
 
-  if (bg.kind === 'linear' && bg.linear) {
-    const angle = ((bg.linear.angle % 360) + 360) % 360;
-    const rad = (angle * Math.PI) / 180;
-    const half = Math.max(pxW, pxH);
-    const cx = pxW / 2, cy = pxH / 2;
-    const x0 = cx - Math.cos(rad) * half, y0 = cy - Math.sin(rad) * half;
-    const x1 = cx + Math.cos(rad) * half, y1 = cy + Math.sin(rad) * half;
-    const g = ctx.createLinearGradient(x0, y0, x1, y1);
-    g.addColorStop(0, bg.linear.from); g.addColorStop(1, bg.linear.to);
-    ctx.fillStyle = g; ctx.fillRect(0, 0, pxW, pxH);
-  }
-
-  if (bg.kind === 'radial' && bg.radial) {
-    const r = Math.hypot(pxW, pxH) / 2;
-    const g = ctx.createRadialGradient(pxW / 2, pxH / 2, 0, pxW / 2, pxH / 2, r);
-    g.addColorStop(0, bg.radial.inner); g.addColorStop(1, bg.radial.outer);
-    ctx.fillStyle = g; ctx.fillRect(0, 0, pxW, pxH);
-  }
-
+// 2. Image d'arrière-plan
   if (bg.kind === 'image' && bg.image && (bg.image.assetId || bg.image.url)) {
     const asset = bg.image.assetId ? assets.find(a => a.id === bg.image!.assetId) : undefined;
     const url = asset?.url || bg.image.url!;
+    
     try {
       const img = await loadImage(url);
-      drawCoverContain(
-        ctx, img, 0, 0, pxW, pxH,
-        bg.image.fit, bg.image.scale,
-        { x: bg.image.offsetX, y: bg.image.offsetY },
-        bg.image.opacity
-      );
-    } catch {}
+      const fit = bg.image.fit || 'cover';
+      const scale = bg.image.scale || 1;
+      const offsetX = bg.image.offsetX || 0;
+      const offsetY = bg.image.offsetY || 0;
+      const opacity = bg.image.opacity !== undefined ? bg.image.opacity : 1;
+      
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      
+      // Calculer les dimensions selon le fit
+      const imgRatio = img.width / img.height;
+      const canvasRatio = pxW / pxH;
+      
+      let drawW, drawH, drawX, drawY;
+      
+      if (fit === 'cover') {
+        if (imgRatio > canvasRatio) {
+          drawH = pxH * scale;
+          drawW = drawH * imgRatio;
+          drawX = (pxW - drawW) / 2;
+          drawY = (pxH - drawH) / 2;
+        } else {
+          drawW = pxW * scale;
+          drawH = drawW / imgRatio;
+          drawX = (pxW - drawW) / 2;
+          drawY = (pxH - drawH) / 2;
+        }
+      } else { // contain
+        if (imgRatio > canvasRatio) {
+          drawW = pxW * scale;
+          drawH = drawW / imgRatio;
+          drawX = (pxW - drawW) / 2;
+          drawY = (pxH - drawH) / 2;
+        } else {
+          drawH = pxH * scale;
+          drawW = drawH * imgRatio;
+          drawX = (pxW - drawW) / 2;
+          drawY = (pxH - drawH) / 2;
+        }
+      }
+      
+      // Appliquer les offsets
+      drawX += (offsetX / 100) * (pxW / 4);
+      drawY += (offsetY / 100) * (pxH / 4);
+      
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+      ctx.restore();
+    } catch (error) {
+      console.warn('Erreur chargement image fond:', error);
+    }
   }
 
-  if (bg.texture && bg.texture.type !== 'none' && bg.texture.opacity > 0) {
+  // 3. Texture
+  if (bg.texture && bg.texture.type !== 'none' && (bg.texture.opacity || 0) > 0) {
     ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, bg.texture.opacity));
+    ctx.globalAlpha = Math.max(0, Math.min(1, bg.texture.opacity || 0.3));
     drawTexture(ctx, pxW, pxH, bg.texture.type);
     ctx.restore();
   }
 
+  // 4. Texte en filigrane
   if (bg.kind === 'text' && bg.text && bg.text.content.trim()) {
     const { content, color, opacity, sizePct, rotation, font } = bg.text;
+    
     ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
-    ctx.fillStyle = color;
-    const fs = Math.max(12, Math.round((sizePct / 100) * pxW));
-    ctx.font = `${fs}px ${font || 'serif'}`;
+    ctx.globalAlpha = Math.max(0, Math.min(1, opacity || 0.08));
+    ctx.fillStyle = color || '#000000';
+    
+    const fontSize = Math.max(12, Math.round((sizePct || 40) / 100 * pxW));
+    ctx.font = `bold ${fontSize}px ${font || 'serif'}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    
     ctx.translate(pxW / 2, pxH / 2);
-    ctx.rotate((rotation * Math.PI) / 180);
-    ctx.fillText(content, 0, 0);
+    ctx.rotate(((rotation || -20) * Math.PI) / 180);
+    
+    // Dessiner le texte ligne par ligne si nécessaire
+    const lines = content.split('\n');
+    const lineHeight = fontSize * 1.2;
+    const startY = -(lines.length - 1) * lineHeight / 2;
+    
+    lines.forEach((line, i) => {
+      ctx.fillText(line, 0, startY + i * lineHeight);
+    });
+    
     ctx.restore();
   }
 
-  if (bg.vignette?.enabled) {
-    const strength = Math.max(0, Math.min(1, bg.vignette.strength));
-    const grd = ctx.createRadialGradient(pxW / 2, pxH / 2, Math.min(pxW, pxH) * 0.2, pxW / 2, pxH / 2, Math.max(pxW, pxH) * 0.7);
-    grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, `rgba(0,0,0,${0.7 * strength})`);
-    ctx.fillStyle = grd; ctx.fillRect(0, 0, pxW, pxH);
+  // 5. Vignettage
+  if (bg.vignette?.enabled && (bg.vignette.strength || 0) > 0) {
+    const strength = Math.max(0, Math.min(1, bg.vignette.strength || 0.25));
+    const alpha = 0.7 * strength;
+    
+    const gradient = ctx.createRadialGradient(
+      pxW / 2, pxH / 2, Math.min(pxW, pxH) * 0.2,
+      pxW / 2, pxH / 2, Math.max(pxW, pxH) * 0.7
+    );
+    gradient.addColorStop(0, 'rgba(0,0,0,0)');
+    gradient.addColorStop(1, `rgba(0,0,0,${alpha})`);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, pxW, pxH);
   }
 
-  if (bg.noise?.enabled && bg.noise.opacity > 0 && bg.noise.amount > 0) {
+  // 6. Bruit/Grain
+  if (bg.noise?.enabled && (bg.noise.opacity || 0) > 0 && (bg.noise.amount || 0) > 0) {
     ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, bg.noise.opacity));
-    drawNoise(ctx, pxW, pxH, Math.max(0, Math.min(1, bg.noise.amount)), !!bg.noise.monochrome);
+    ctx.globalAlpha = Math.max(0, Math.min(1, bg.noise.opacity || 0.15));
+    drawNoise(ctx, pxW, pxH, Math.max(0, Math.min(1, bg.noise.amount || 0.15)), !!bg.noise.monochrome);
     ctx.restore();
   }
 }
-
-/* Simple textures */
-function drawTexture(ctx: CanvasRenderingContext2D, w: number, h: number, type: 'paper'|'linen'|'grid') {
+function drawTexture(ctx: CanvasRenderingContext2D, w: number, h: number, type: 'paper' | 'linen' | 'grid') {
   if (type === 'grid') {
-    ctx.strokeStyle = 'rgba(0,0,0,0.06)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+    ctx.lineWidth = 1;
     const step = 24;
-    for (let x = 0; x < w; x += step) { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke(); }
-    for (let y = 0; y < h; y += step) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke(); }
+    for (let x = 0; x < w; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, h);
+      ctx.stroke();
+    }
+    for (let y = 0; y < h; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(w, y + 0.5);
+      ctx.stroke();
+    }
     return;
   }
+  
+  // Texture papier ou lin
   const count = type === 'paper' ? 350 : 600;
+  const maxLength = type === 'paper' ? 10 : 18;
+  const lineWidth = type === 'paper' ? 0.6 : 0.4;
+  
+  ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+  ctx.lineWidth = lineWidth;
+  
   for (let i = 0; i < count; i++) {
-    const x = Math.random() * w, y = Math.random() * h;
-    const len = (type === 'paper' ? 10 : 18) * Math.random();
-    const ang = Math.random() * Math.PI * 2;
-    ctx.strokeStyle = 'rgba(0,0,0,0.04)';
-    ctx.lineWidth = type === 'paper' ? 0.6 : 0.4;
+    const x = Math.random() * w;
+    const y = Math.random() * h;
+    const length = maxLength * Math.random();
+    const angle = Math.random() * Math.PI * 2;
+    
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+    ctx.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
     ctx.stroke();
   }
 }
 
-/* Procedural noise */
-function drawNoise(ctx: CanvasRenderingContext2D, w: number, h: number, amount: number, mono: boolean) {
-  const img = ctx.createImageData(w, h);
-  const d = img.data;
-  const amp = Math.round(255 * amount);
-  for (let i = 0; i < d.length; i += 4) {
-    if (mono) {
-      const n = Math.floor(Math.random() * amp);
-      d[i] = n; d[i+1] = n; d[i+2] = n; d[i+3] = 255;
+function drawNoise(ctx: CanvasRenderingContext2D, w: number, h: number, amount: number, monochrome: boolean) {
+  const imageData = ctx.createImageData(w, h);
+  const data = imageData.data;
+  const amplitude = Math.round(255 * amount);
+  
+  for (let i = 0; i < data.length; i += 4) {
+    if (monochrome) {
+      const noise = Math.floor(Math.random() * amplitude);
+      data[i] = noise;     // R
+      data[i + 1] = noise; // G
+      data[i + 2] = noise; // B
+      data[i + 3] = 255;   // A
     } else {
-      d[i] = Math.floor(Math.random() * amp);
-      d[i+1] = Math.floor(Math.random() * amp);
-      d[i+2] = Math.floor(Math.random() * amp);
-      d[i+3] = 255;
+      data[i] = Math.floor(Math.random() * amplitude);     // R
+      data[i + 1] = Math.floor(Math.random() * amplitude); // G
+      data[i + 2] = Math.floor(Math.random() * amplitude); // B
+      data[i + 3] = 255;   // A
     }
   }
-  ctx.putImageData(img, 0, 0);
+  
+  ctx.putImageData(imageData, 0, 0);
 }

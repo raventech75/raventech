@@ -51,17 +51,17 @@ export default function AssetDock() {
                     onClick={() => {
                       const p = st.pages[st.currentPageIndex]; // propriété correcte
                       const id = Math.random().toString(36).slice(2);
-                      const ph = {
-                        id,
-                        kind: 'photo' as const,
-                        x: 24,
-                        y: 24,
-                        width: 220,
-                        height: 160,
-                        opacity: 1,
-                        rotation: 0,
-                        assetId: a.id,
-                      };
+                     const ph = {
+  id,
+  kind: 'photo' as const,
+  x: 24,
+  y: 24,
+  w: 220,      // ← Changez de "width: 220" à "w: 220"
+  h: 160,      // ← Changez de "height: 160" à "h: 160"
+  opacity: 1,
+  rotation: 0,
+  assetId: a.id,
+};
                       p.items.push(ph as any);
                       // Appel seulement si présent dans le store (évite l'erreur TS + runtime)
                       (st as any).setSelected?.([id]);

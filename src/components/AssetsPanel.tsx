@@ -147,9 +147,10 @@ function AssetCard({ assetId }: { assetId: string }) {
   const isUsedOnCurrent = st.pages[st.currentPageIndex].items.some((i) => i.kind === 'photo' && (i as any).assetId === assetId);
 
   const addToPage = () => {
-    // Positionne un cadre 6x4 cm en haut-gauche avec AR de l’image
+    // Positionne un cadre 6x4 cm en haut-gauche avec AR de l'image
     const w = 6;
     const h = asset.ar ? w / asset.ar : 4;
+    
     if ((st as any).addPhotoOnPage) {
       (st as any).addPhotoOnPage({
         assetId,
@@ -163,17 +164,20 @@ function AssetCard({ assetId }: { assetId: string }) {
       const id = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
         ? (crypto as any).randomUUID()
         : 'id_' + Math.random().toString(36).slice(2, 10);
+      
       page.items.push({
         id,
         kind: 'photo' as const,
         x: 1,
         y: 1,
-        width: w,
-        height: h,
+        w: w,        // ← Changez de "width: w" à "w: w"
+        h: h,        // ← Changez de "height: h" à "h: h"
         opacity: 1,
         rotation: 0,
         assetId,
       } as any);
+      
+      // Sélectionner l'item ajouté
       (st as any).setSelected?.([id]);
     }
   };

@@ -31,7 +31,6 @@ type DragState = {
     | 'topright'
     | 'bottomleft'
     | 'bottomright'
-    | 'corner'
     | 'inner-pan'
     | null;
   originPx: { x: number; y: number } | null;
@@ -41,12 +40,23 @@ type DragState = {
   startOffsetPct?: { x: number; y: number } | null;
 };
 
+type ResizeMode = 'left' | 'right' | 'top' | 'bottom' | 'topleft' | 'topright' | 'bottomleft' | 'bottomright';
+
 type SnapLines = { v: number[]; h: number[] };
 type PinchState = {
   itemId: string | null;
   pointers: Map<number, { x: number; y: number }>;
   lastDist?: number;
 };
+
+/* ===== Helper: détecter un drag manuel (pour ne pas relancer l'auto-layout) ===== */
+const MANUAL_DRAG_MODES = new Set<NonNullable<DragState['mode']>>([
+  'move',
+  'left', 'right', 'top', 'bottom',
+  'topleft', 'topright', 'bottomleft', 'bottomright',
+  'inner-pan',
+]);
+const isManualDragMode = (mode: DragState['mode']) => !!mode && MANUAL_DRAG_MODES.has(mode);
 
 /* ===== Règles / guides / grille / snap (helpers visuels) ===== */
 function TopRuler({ widthPx, zoom }: { widthPx: number; zoom: number }) {
@@ -116,14 +126,15 @@ function GridOverlay({ zoom }: { zoom: number }) {
   );
 }
 
-function Grip({ className, dir }: { className: string; dir:
-  'left'|'right'|'top'|'bottom'|'topleft'|'topright'|'bottomleft'|'bottomright'|'corner'
-}) {
+function Grip({ className, dir }: { className: string; dir: ResizeMode }) {
   return (
     <div
-      className={`absolute w-3.5 h-3.5 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,.15)] border border-slate-300
-                  hover:scale-125 transition-transform ${className}`}
+      className={`absolute w-3 h-3 rounded-full bg-gray-500 shadow-lg border-2 border-white
+                  hover:bg-gray-600 hover:scale-110 transition-all duration-150 ease-out ${className}`}
       data-grip={dir}
+      style={{
+        boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
+      }}
     />
   );
 }
@@ -305,9 +316,7 @@ export default function EditorCanvas() {
 
   function snapResizeBoxAllSides(
     start: { x: number; y: number; w: number; h: number },
-    mode:
-      | 'left' | 'right' | 'top' | 'bottom'
-      | 'topleft' | 'topright' | 'bottomleft' | 'bottomright',
+    mode: ResizeMode,
     dxCm: number,
     dyCm: number,
     id: string,
@@ -421,7 +430,7 @@ export default function EditorCanvas() {
 
     st.selectItem(st.currentPageIndex, itemId);
     const target = e.currentTarget as HTMLElement;
-    const grip = (e.target as HTMLElement).dataset.grip as DragState['mode'] | undefined;
+    const grip = (e.target as HTMLElement).dataset.grip as ResizeMode | undefined;
 
     const startBox = {
       x: parseFloat(target.dataset.xcm!), y: parseFloat(target.dataset.ycm!),
@@ -534,10 +543,12 @@ export default function EditorCanvas() {
       st.updateItem(st.currentPageIndex, it.id, { x, y }); setSnapLines(res.lines); return;
     }
 
-    const __modeStr = (d as any).mode as string | null;
-    if (__modeStr && __modeStr !== 'inner-pan') {
+    // Vérifier que le mode est un mode de resize valide
+    const resizeModes: ResizeMode[] = ['left', 'right', 'top', 'bottom', 'topleft', 'topright', 'bottomleft', 'bottomright'];
+    if (d.mode && resizeModes.includes(d.mode as ResizeMode)) {
+      const resizeMode = d.mode as ResizeMode;
       const fromCenter = (e.altKey || e.metaKey); // ⌥/⌘ = resize depuis le centre
-      const res = snapResizeBoxAllSides(d.startBoxCm, (d.mode as any), dxCm, dyCm, d.id, d.keepRatio, fromCenter);
+      const res = snapResizeBoxAllSides(d.startBoxCm, resizeMode, dxCm, dyCm, d.id, d.keepRatio, fromCenter);
 
       const minW = Math.max(it.minW ?? 1, 0.5);
       const minH = Math.max(it.minH ?? 1, 0.5);
@@ -553,10 +564,16 @@ export default function EditorCanvas() {
     }
   };
 
-  const onPointerUpStage = () => {
+  // ⬇️⬇️ PATCH: NE PAS relancer l'auto-layout après un drag manuel
+  const onPointerUpStage = (e?: React.PointerEvent) => {
+    const lastMode = drag.current.mode;
     drag.current = { id: null, mode: null, originPx: null, startBoxCm: null, keepRatio: false, lockAxis: null, startOffsetPct: null };
     setSnapLines({ v: [], h: [] });
-    st.relayoutCurrentPage();
+
+    // Si ce n'était PAS un drag manuel, on peut relancer un relayout auto (ex: après une action programmatique)
+    if (!isManualDragMode(lastMode)) {
+      st.relayoutCurrentPage();
+    }
   };
 
   /* ===== Raccourcis ===== */
@@ -598,9 +615,48 @@ export default function EditorCanvas() {
 
   const bg = page.background;
   let cssBackground = '#FFFFFF';
-  if (bg.kind === 'solid' && (bg as any).solid) cssBackground = (bg as any).solid.color;
-  else if (bg.kind === 'linear' && (bg as any).linear) cssBackground = `linear-gradient(${(bg as any).linear.angle}deg, ${(bg as any).linear.from}, ${(bg as any).linear.to})`;
-  else if (bg.kind === 'radial' && (bg as any).radial) cssBackground = `radial-gradient(${(bg as any).radial.shape}, ${(bg as any).radial.inner}, ${(bg as any).radial.outer})`;
+
+  switch (bg.kind) {
+  case 'solid':
+    if (bg.solid?.color) {
+      cssBackground = bg.solid.color;
+    }
+    break;
+  
+  case 'linear':
+    if (bg.linear) {
+      const angle = bg.linear.angle || 90;
+      const from = bg.linear.from || '#FFFFFF';
+      const to = bg.linear.to || '#F8FAFC';
+      cssBackground = `linear-gradient(${angle}deg, ${from}, ${to})`;
+    }
+    break;
+  
+  case 'radial':
+    if (bg.radial) {
+      const shape = bg.radial.shape || 'ellipse';
+      const inner = bg.radial.inner || '#FFFFFF';
+      const outer = bg.radial.outer || '#F1F5F9';
+      cssBackground = `radial-gradient(${shape}, ${inner}, ${outer})`;
+    }
+    break;
+  
+  case 'image':
+    if (bg.image && (bg.image.assetId || bg.image.url)) {
+      // Pour les images, on garde le blanc comme base et on ajoute l'image en overlay
+      cssBackground = '#FFFFFF';
+    }
+    break;
+  
+  case 'text':
+    // Pour le texte en filigrane, on garde le blanc comme base
+    cssBackground = '#FFFFFF';
+    break;
+  
+  default:
+    cssBackground = '#FFFFFF';
+}
+
 
   const pageStyle: React.CSSProperties = {
     width: stageW,
@@ -615,74 +671,142 @@ export default function EditorCanvas() {
   const panTransform: React.CSSProperties = { transform: `translate(${panPx.x}px, ${panPx.y}px)` };
 
   // Overlays de fond
-  const textureLayer = (() => {
-    const t = (bg as any).texture;
-    if (!t || t.type === 'none' || t.opacity <= 0) return null;
-    let backgroundImage = '';
-    if (t.type === 'grid') {
+const imageLayer = (() => {
+  if (!(bg.kind === 'image' && bg.image && (bg.image.assetId || bg.image.url))) return null;
+  
+  const asset = bg.image.assetId ? st.assets.find((a) => a.id === bg.image!.assetId) : undefined;
+  const url = asset?.url || bg.image.url!;
+  const fit = bg.image.fit || 'cover';
+  const scale = bg.image.scale || 1;
+  const offsetX = bg.image.offsetX || 0;
+  const offsetY = bg.image.offsetY || 0;
+  const opacity = bg.image.opacity !== undefined ? bg.image.opacity : 1;
+  
+  return (
+    <div
+      style={{
+        position: 'absolute', 
+        inset: 0, 
+        pointerEvents: 'none',
+        backgroundImage: `url(${url})`,
+        backgroundPosition: `${50 + offsetX}% ${50 + offsetY}%`,
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: fit === 'cover' ? `${scale * 100}% auto, cover` : 'contain',
+        opacity: opacity,
+        transform: 'translateZ(0)',
+      }}
+    />
+  );
+})();
+
+const textureLayer = (() => {
+  const t = bg.texture;
+  if (!t || t.type === 'none' || (t.opacity || 0) <= 0) return null;
+  
+  let backgroundImage = '';
+  const opacity = Math.max(0, Math.min(1, t.opacity || 0.3));
+  
+  switch (t.type) {
+    case 'grid':
       backgroundImage = `
         repeating-linear-gradient(to right, rgba(0,0,0,0.06) 0 1px, transparent 1px 24px),
         repeating-linear-gradient(to bottom, rgba(0,0,0,0.06) 0 1px, transparent 1px 24px)
       `;
-    } else if (t.type === 'paper') {
+      break;
+    case 'paper':
       backgroundImage = `
         repeating-linear-gradient(45deg, rgba(0,0,0,0.03) 0 2px, transparent 2px 6px),
         repeating-linear-gradient(-45deg, rgba(0,0,0,0.03) 0 2px, transparent 2px 6px)
       `;
-    } else if (t.type === 'linen') {
+      break;
+    case 'linen':
       backgroundImage = `
         repeating-linear-gradient(0deg, rgba(0,0,0,0.035) 0 1px, transparent 1px 3px),
         repeating-linear-gradient(90deg, rgba(0,0,0,0.035) 0 1px, transparent 1px 3px)
       `;
-    }
-    return <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: Math.max(0, Math.min(1, t.opacity)), backgroundImage }} />;
-  })();
+      break;
+  }
+  
+  return (
+    <div style={{ 
+      position: 'absolute', 
+      inset: 0, 
+      pointerEvents: 'none', 
+      opacity, 
+      backgroundImage 
+    }} />
+  );
+})();
 
-  const noiseLayer = (() => {
-    const n = (bg as any).noise;
-    if (!n?.enabled || (n.opacity ?? 0) <= 0 || !noiseUrlRef.current) return null;
-    return <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: Math.max(0, Math.min(1, n.opacity)), backgroundImage: `url(${noiseUrlRef.current})`, backgroundRepeat: 'repeat', mixBlendMode: 'multiply' }} />;
-  })();
-
-  const imageLayer = (() => {
-    const im = (bg as any).image;
-    if (!(bg.kind === 'image' && im && (im.assetId || im.url))) return null;
-    const asset = im.assetId ? st.assets.find((a) => a.id === im.assetId) : undefined;
-    const url = asset?.url || im.url!;
-    const fit = im.fit ?? 'cover';
-    return (
-      <div
-        style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          backgroundImage: `url(${url})`,
-          backgroundPosition: `${50 + (im.offsetX ?? 0)}% ${50 + (im.offsetY ?? 0)}%`,
-          backgroundRepeat: 'no-repeat',
-          backgroundSize: fit === 'cover' ? `${(im.scale ?? 1) * 100}% auto, cover` : 'contain',
-          opacity: im.opacity ?? 1,
-          transform: 'translateZ(0)',
-        }}
-      />
-    );
-  })();
-
-  const vignetteLayer = (() => {
-    const v = (bg as any).vignette;
-    if (!v?.enabled) return null;
-    const alpha = 0.7 * Math.max(0, Math.min(1, v.strength));
-    return <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: `radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,${alpha}) 100%)` }} />;
-  })();
-
-  const textLayer = (() => {
-    if (!(bg.kind === 'text' && (bg as any).text && (bg as any).text.content.trim())) return null;
-    const t = (bg as any).text;
-    return (
-      <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
-        <div style={{ color: t.color, opacity: t.opacity, fontFamily: t.font || 'serif', fontWeight: 700, transform: `rotate(${t.rotation}deg)`, fontSize: `${(t.sizePct / 100) * stageW}px`, lineHeight: 1, whiteSpace: 'pre-wrap', textAlign: 'center' }}>
-          {t.content}
-        </div>
+const textLayer = (() => {
+  if (!(bg.kind === 'text' && bg.text && bg.text.content.trim())) return null;
+  
+  const t = bg.text;
+  const fontSize = Math.max(12, (t.sizePct || 40) / 100 * stageW);
+  const color = t.color || '#000000';
+  const opacity = Math.max(0, Math.min(1, t.opacity || 0.08));
+  const rotation = t.rotation || -20;
+  const font = t.font || 'serif';
+  
+  return (
+    <div style={{ 
+      position: 'absolute', 
+      inset: 0, 
+      display: 'grid', 
+      placeItems: 'center', 
+      pointerEvents: 'none' 
+    }}>
+      <div style={{ 
+        color, 
+        opacity, 
+        fontFamily: font, 
+        fontWeight: 700, 
+        transform: `rotate(${rotation}deg)`, 
+        fontSize: `${fontSize}px`, 
+        lineHeight: 1, 
+        whiteSpace: 'pre-wrap', 
+        textAlign: 'center',
+        userSelect: 'none'
+      }}>
+        {t.content}
       </div>
-    );
-  })();
+    </div>
+  );
+})();
+
+const vignetteLayer = (() => {
+  if (!bg.vignette?.enabled || (bg.vignette.strength || 0) <= 0) return null;
+  
+  const strength = Math.max(0, Math.min(1, bg.vignette.strength || 0.25));
+  const alpha = 0.7 * strength;
+  
+  return (
+    <div style={{ 
+      position: 'absolute', 
+      inset: 0, 
+      pointerEvents: 'none', 
+      background: `radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,${alpha}) 100%)` 
+    }} />
+  );
+})();
+
+const noiseLayer = (() => {
+  if (!bg.noise?.enabled || (bg.noise.opacity || 0) <= 0 || !noiseUrlRef.current) return null;
+  
+  const opacity = Math.max(0, Math.min(1, bg.noise.opacity || 0.15));
+  
+  return (
+    <div style={{ 
+      position: 'absolute', 
+      inset: 0, 
+      pointerEvents: 'none', 
+      opacity, 
+      backgroundImage: `url(${noiseUrlRef.current})`, 
+      backgroundRepeat: 'repeat', 
+      mixBlendMode: 'multiply' 
+    }} />
+  );
+})();
 
   return (
     <div className="h-full w-full flex flex-col">
@@ -716,19 +840,19 @@ export default function EditorCanvas() {
 
           {/* Page */}
           <div
-            ref={refStage}
-            style={pageStyle}
-            onPointerMove={onPointerMoveStage}
-            onPointerUp={onPointerUpStage}
-            onWheel={onWheelStage}
-            onPointerDown={(e) => { if (e.currentTarget === e.target) st.selectItem(st.currentPageIndex, undefined); }}
-          >
-            {/* couches de fond */}
-            {imageLayer}
-            {textureLayer}
-            {textLayer}
-            {vignetteLayer}
-            {noiseLayer}
+  ref={refStage}
+  style={pageStyle}
+  onPointerMove={onPointerMoveStage}
+  onPointerUp={onPointerUpStage}
+  onWheel={onWheelStage}
+  onPointerDown={(e) => { if (e.currentTarget === e.target) st.selectItem(st.currentPageIndex, undefined); }}
+>
+            {/* Couches de fond - ordre important */}
+  {imageLayer}
+  {textureLayer}
+  {textLayer}
+  {vignetteLayer}
+  {noiseLayer}
 
             {/* Guides & snap */}
             {st.showGuides && (
@@ -789,6 +913,7 @@ export default function EditorCanvas() {
               return (
                 <div
                   key={it.id}
+                  className="group"
                   style={style}
                   data-xcm={it.x} data-ycm={it.y} data-wcm={it.w} data-hcm={it.h}
                   onPointerDown={(e) => handleItemPointerDown(e, it.id)}
@@ -812,7 +937,7 @@ export default function EditorCanvas() {
                         src={(asset as any).previewUrl ?? asset.url}
                         alt=""
                         draggable={false}
-                        className="w-full h-full object-cover select-none pointer-events-none"
+                        className="w-full h-full object-contain select-none pointer-events-none"
                         style={{
                           transform: `translate(${(it as any).offsetXpct ?? 0}%, ${(it as any).offsetYpct ?? 0}%) scale(${(it as any).scale ?? 1})`,
                           transformOrigin: 'center',
@@ -830,7 +955,7 @@ export default function EditorCanvas() {
                   {cropOn && (
                     <div className="absolute inset-0 pointer-events-none"
                          style={{ background: 'linear-gradient(rgba(0,0,0,0.22), rgba(0,0,0,0.22))', mixBlendMode: 'multiply' }}>
-                      <div className="absolute inset-2 rounded-[inherit] bg-transparent ring-2 ring-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)_inset]">
+                      <div className="absolute inset-2 rounded-[inherit] bg-transparent ring-2 ring-white/80 shadow-[0,0,0,9999px_rgba(0,0,0,0.25)_inset]">
                         <div className="absolute inset-0">
                           <div className="absolute inset-y-0 left-1/3 w-px bg-white/80" />
                           <div className="absolute inset-y-0 left-2/3 w-px bg-white/80" />
@@ -842,15 +967,9 @@ export default function EditorCanvas() {
                   )}
 
                   {/* Grips (8 directions) */}
-                  <Grip className="left-0 top-1/2 -translate-y-1/2 cursor-ew-resize" dir="left" />
-                  <Grip className="right-0 top-1/2 -translate-y-1/2 cursor-ew-resize" dir="right" />
-                  <Grip className="top-0 left-1/2 -translate-x-1/2 cursor-ns-resize" dir="top" />
-                  <Grip className="bottom-0 left-1/2 -translate-x-1/2 cursor-ns-resize" dir="bottom" />
-
-                  <Grip className="left-0 top-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize" dir="topleft" />
-                  <Grip className="right-0 top-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize" dir="topright" />
-                  <Grip className="left-0 bottom-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize" dir="bottomleft" />
-                  <Grip className="right-0 bottom-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize" dir="bottomright" />
+               {isSelected && (
+  <Grip className="right-0 bottom-0 cursor-nwse-resize" dir="bottomright" />
+)}
 
                   {/* sélection (double ring) */}
                   {isSelected && (

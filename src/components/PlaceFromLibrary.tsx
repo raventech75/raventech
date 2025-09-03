@@ -111,17 +111,17 @@ export default function PlaceFromLibrary() {
                   const x = Math.round((pageW - w) / 2);
                   const y = Math.round((pageH - h) / 2);
 
-                  const newItem = {
-                    id: uid(),
-                    kind: 'photo' as const,
-                    x,
-                    y,
-                    width: w,
-                    height: h,
-                    opacity: 1,
-                    rotation: 0,
-                    assetId: a.id,
-                  };
+                 const newItem = {
+  id: uid(),
+  kind: 'photo' as const,
+  x: x,
+  y: y,
+  w: w,        // ← Changez de "width: w" à "w: w"
+  h: h,        // ← Changez de "height: h" à "h: h"
+  opacity: 1,
+  rotation: 0,
+  assetId: a.id,
+};
 
                   useAlbumStore.setState((s) => {
                     const pages = JSON.parse(JSON.stringify(s.pages));

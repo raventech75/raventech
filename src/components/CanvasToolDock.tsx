@@ -20,6 +20,8 @@ function Label({ children }: { children: React.ReactNode }) {
   return <div className="text-[11px] text-slate-600">{children}</div>;
 }
 
+type Pos = { x: number; y: number } | null;
+
 export default function CanvasToolDock() {
   const st = useAlbumStore();
 
@@ -58,10 +60,130 @@ export default function CanvasToolDock() {
     </label>
   );
 
+  /* =========================
+     Position draggable + persistance
+     ========================= */
+  const [pos, setPos] = React.useState<Pos>(null); // null => centré par défaut
+  const dragRef = React.useRef<{
+    start?: { x: number; y: number };
+    base?: { x: number; y: number };
+    dragging: boolean;
+  }>({ dragging: false });
+
+  // Charger la position
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem('canvasToolDockPos');
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (typeof p?.x === 'number' && typeof p?.y === 'number') setPos({ x: p.x, y: p.y });
+      }
+    } catch {}
+  }, []);
+
+  // Sauvegarder la position
+  React.useEffect(() => {
+    if (!pos) return;
+    try {
+      localStorage.setItem('canvasToolDockPos', JSON.stringify(pos));
+    } catch {}
+  }, [pos]);
+
+  // Contrainte dans la fenêtre
+  const clampToViewport = React.useCallback((x: number, y: number) => {
+    const m = 8; // marge
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // Estimation largeur/hauteur dock (≈) pour clamp
+    const W = 920; // largeur max approximative
+    const H = 48;
+    return {
+      x: Math.min(Math.max(m, x), Math.max(m, vw - m - 200)), // laisse de la marge à droite
+      y: Math.min(Math.max(m, y), Math.max(m, vh - m - H)),
+    };
+  }, []);
+
+  // Démarrage drag sur la poignée
+  const onHandlePointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current.dragging = true;
+    dragRef.current.start = { x: e.clientX, y: e.clientY };
+    const base = pos ?? {
+      // si pos null => centré haut
+      x: Math.round(window.innerWidth / 2 - 460), // W≈920 /2
+      y: 16,
+    };
+    dragRef.current.base = base;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const onHandlePointerMove = (e: React.PointerEvent) => {
+    if (!dragRef.current.dragging || !dragRef.current.start || !dragRef.current.base) return;
+    const dx = e.clientX - dragRef.current.start.x;
+    const dy = e.clientY - dragRef.current.start.y;
+    const nx = dragRef.current.base.x + dx;
+    const ny = dragRef.current.base.y + dy;
+    const cl = clampToViewport(nx, ny);
+    setPos(cl);
+  };
+
+  const onHandlePointerUp = (e: React.PointerEvent) => {
+    if (!dragRef.current.dragging) return;
+    dragRef.current.dragging = false;
+    dragRef.current.start = undefined;
+    dragRef.current.base = undefined;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const onHandleDoubleClick = () => {
+    // reset position => centré haut
+    setPos(null);
+    try {
+      localStorage.removeItem('canvasToolDockPos');
+    } catch {}
+  };
+
+  // Style absolu selon pos
+  const dockWrapperStyle: React.CSSProperties = pos
+    ? {
+        position: 'absolute',
+        left: pos.x,
+        top: pos.y,
+        zIndex: 40,
+      }
+    : {
+        position: 'absolute',
+        left: '50%',
+        top: 16,
+        transform: 'translateX(-50%)',
+        zIndex: 40,
+      };
+
   if (!item) {
     return (
-      <div className="pointer-events-auto absolute left-1/2 top-4 z-40 -translate-x-1/2">
+      <div
+        className="pointer-events-auto"
+        style={dockWrapperStyle}
+        onPointerDown={stop}
+        onPointerMove={stop}
+      >
         <div className="flex items-center gap-3 rounded-full border border-slate-300 bg-white/95 px-3 py-2 shadow">
+          {/* poignée draggable */}
+          <button
+            title="Déplacer la barre (double-clic pour réinitialiser)"
+            onDoubleClick={onHandleDoubleClick}
+            onPointerDown={onHandlePointerDown}
+            onPointerMove={onHandlePointerMove}
+            onPointerUp={onHandlePointerUp}
+            className="h-7 w-7 rounded-full border border-slate-300 text-slate-700 hover:bg-slate-50 text-[12px] cursor-grab active:cursor-grabbing"
+            aria-label="Drag handle"
+          >
+            ⋮⋮
+          </button>
+
           <Label>Sélectionnez un élément</Label>
           {GridToggle}
         </div>
@@ -146,7 +268,6 @@ export default function CanvasToolDock() {
   };
 
   const distribute = (axis: 'h' | 'v') => {
-    // ✅ utilise selectedIds si présent, sinon fallback (calculé plus haut)
     const items = page.items.filter((i: any) => selectedIds.includes(i.id));
     if (!items || items.length < 3) return;
 
@@ -155,8 +276,8 @@ export default function CanvasToolDock() {
 
     const totalSpan =
       axis === 'h'
-        ? sorted[sorted.length - 1].x - sorted[0].x + sorted[sorted.length - 1].w - sorted[0].w
-        : sorted[sorted.length - 1].y - sorted[0].y + sorted[sorted.length - 1].h - sorted[0].h;
+        ? (sorted[sorted.length - 1].x + sorted[sorted.length - 1].w) - sorted[0].x
+        : (sorted[sorted.length - 1].y + sorted[sorted.length - 1].h) - sorted[0].y;
 
     const occupied =
       axis === 'h'
@@ -208,11 +329,25 @@ export default function CanvasToolDock() {
 
   return (
     <div
-      className="pointer-events-auto absolute left-1/2 top-4 z-40 -translate-x-1/2"
+      className="pointer-events-auto"
+      style={dockWrapperStyle}
       onMouseDown={stop}
       onPointerDown={stop}
     >
       <div className="flex items-center gap-3 rounded-full border border-slate-300 bg-white/95 px-3 py-2 shadow">
+        {/* poignée draggable */}
+        <button
+          title="Déplacer la barre (double-clic pour réinitialiser)"
+          onDoubleClick={onHandleDoubleClick}
+          onPointerDown={onHandlePointerDown}
+          onPointerMove={onHandlePointerMove}
+          onPointerUp={onHandlePointerUp}
+          className="h-7 w-7 rounded-full border border-slate-300 text-slate-700 hover:bg-slate-50 text-[12px] cursor-grab active:cursor-grabbing"
+          aria-label="Drag handle"
+        >
+          ⋮⋮
+        </button>
+
         {/* Verrou */}
         <button
           onClick={toggleLock}
@@ -284,7 +419,7 @@ export default function CanvasToolDock() {
                 (lockAspect ? 'bg-slate-800 text-white' : 'bg-white text-slate-700 hover:bg-slate-50')
               }
             >
-              {lockAspect ? 'Ratio verrouillé' : 'Verrouiller ratio'}
+              {lockAspect ? 'Verrouiller ratio' : 'Verrouiller ratio'}
             </button>
           </div>
         )}
