@@ -23,10 +23,10 @@ export function middleware(req: NextRequest) {
   // Auth requise ailleurs
   const isAuthed = Boolean(req.cookies.get('sb:token')?.value);
   if (!isAuthed) {
-    const url = new URL('/', req.url);
-    url.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(url);
-  }
+  const url = new URL('/', req.url);
+  url.searchParams.set('redirect', pathname);
+  return NextResponse.redirect(url);
+}
 
   return NextResponse.next();
 }

@@ -4,17 +4,6 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import EditorLayout from '@/components/EditorLayout';
 import { Analytics } from "@vercel/analytics/next"
 
-export default async function Page() {
-  const supabase = createServerComponentClient({ cookies });
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  // Si pas connecté → /sign-in
-  if (!session) {
-    redirect('/');
-  }
-
-  // ✅ Si connecté → affiche directement l'éditeur
-  return <EditorLayout />;
+export default function Home() {
+  redirect('/pages'); // renvoie toujours vers la page /pages
 }
