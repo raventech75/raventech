@@ -2,39 +2,38 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-/**
- * On protège uniquement les routes "sensibles".
- * ⚠️ On NE matche PAS "/" pour éviter toute redirection auto de la page d'accueil.
- */
 export const config = {
-  matcher: ['/editor', '/projects/:path*'], // <-- pas de "/"
+  matcher: ['/', '/editor', '/projects/:path*'], // on remet "/" explicitement
 };
 
 export function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
+  const { pathname } = req.nextUrl;
 
-  // Laisse passer l'API, l'auth et les assets Next
+  // ✅ Redirection spéciale pour la racine
+  if (pathname === '/') {
+    return NextResponse.redirect(new URL('/sign-in', req.url));
+  }
+
+  // --- le reste de ta logique (auth, etc.) ---
   if (pathname.startsWith('/api')) return NextResponse.next();
   if (pathname.startsWith('/auth')) return NextResponse.next();
-  if (pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up')) return NextResponse.next();
-  if (pathname.startsWith('/_next') || pathname === '/favicon.ico' || pathname.startsWith('/static')) {
+  if (pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up'))
+    return NextResponse.next();
+  if (
+    pathname.startsWith('/_next') ||
+    pathname === '/favicon.ico' ||
+    pathname.startsWith('/static')
+  ) {
     return NextResponse.next();
   }
 
-  // Détermine si l'utilisateur est authentifié (adapte selon ton app)
-  // Exemple: cookie Supabase / autre token d'auth
-  const isAuthed =
-    Boolean(req.cookies.get('sb:token')?.value) ||
-    Boolean(req.cookies.get('auth')?.value) ||
-    Boolean(req.headers.get('x-user-id'));
+  const isAuthed = Boolean(req.cookies.get('sb:token')?.value);
 
-  // Si la route est protégée et l'utilisateur n'est pas connecté → redirige vers sign-in
   if (!isAuthed) {
     const url = new URL('/sign-in', req.url);
-    url.searchParams.set('redirect', pathname + (search || ''));
+    url.searchParams.set('redirect', pathname);
     return NextResponse.redirect(url);
   }
 
-  // Sinon on continue
   return NextResponse.next();
 }
