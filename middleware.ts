@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export const config = {
-  matcher: ['/', '/editor', '/projects/:path*'], // on remet "/" explicitement
+  matcher: ['/sign-in', '/', '/projects/:path*'], // on remet "/" explicitement
 };
 
 export function middleware(req: NextRequest) {
